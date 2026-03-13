@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SecureChat - 端到端加密通讯</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- ==================== Welcome Page ==================== -->
+  <div id="page-welcome" class="page welcome active">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg></div>
+    <h1>SecureChat</h1>
+    <p class="subtitle">端到端加密通讯</p>
+    <div class="feature-list">
+      <div class="feature-row"><div class="icon">🔑</div><div class="text"><h3>助记词账户</h3><p>无需手机号或邮箱，用助记词创建身份</p></div></div>
+      <div class="feature-row"><div class="icon">🔒</div><div class="text"><h3>本地加密</h3><p>消息在发送前在本地加密，平台无法读取</p></div></div>
+      <div class="feature-row"><div class="icon">🔄</div><div class="text"><h3>密钥交换</h3><p>与联系人共享密钥，实现安全通信</p></div></div>
+    </div>
+    <button class="btn btn-primary" onclick="showPage('page-create')">创建新账户</button>
+    <button class="btn btn-secondary" onclick="showPage('page-restore')">恢复已有账户</button>
+  </div>
+
+  <!-- ==================== Create Account ==================== -->
+  <div id="page-create" class="page create-page">
+    <div class="header">
+      <button class="back-btn" onclick="showPage('page-welcome')">&larr;</button>
+      <h2>创建账户</h2>
+      <div class="header-right"></div>
+    </div>
+    <div class="body" id="create-body"></div>
+    <div class="bottom-actions" id="create-actions"></div>
+  </div>
+
+  <!-- ==================== Restore Account ==================== -->
+  <div id="page-restore" class="page restore-page">
+    <div class="header">
+      <button class="back-btn" onclick="showPage('page-welcome')">&larr;</button>
+      <h2>恢复账户</h2>
+      <div class="header-right"></div>
+    </div>
+    <div class="body">
+      <div class="step-icon">🔄</div>
+      <div class="step-title">恢复账户</div>
+      <div class="step-desc">输入您的12个助记词来恢复账户</div>
+      <div class="input-group">
+        <textarea id="restore-input" placeholder="输入12个助记词，用空格分隔..."></textarea>
+        <div id="restore-word-count" class="hint">0 / 12 个词</div>
+        <div id="restore-error" class="error" style="display:none"></div>
+      </div>
+      <button class="copy-btn" onclick="pasteRestore()">📋 从剪贴板粘贴</button>
+    </div>
+    <div class="bottom-actions">
+      <button class="btn btn-primary" id="restore-btn" disabled onclick="doRestore()">恢复账户</button>
+    </div>
+  </div>
+
+  <!-- ==================== Main App (Tabs) ==================== -->
+  <div id="page-main" class="page">
+    <div id="tab-content" style="flex:1; overflow:hidden; position:relative;"></div>
+    <div class="tab-bar">
+      <div class="tab active" data-tab="chats" onclick="switchTab('chats')">
+        <div class="icon">💬</div><div class="label">消息</div>
+        <div class="badge" id="tab-badge-chats" style="display:none"></div>
+      </div>
+      <div class="tab" data-tab="contacts" onclick="switchTab('contacts')">
+        <div class="icon">👥</div><div class="label">通讯录</div>
+      </div>
+      <div class="tab" data-tab="discover" onclick="switchTab('discover')">
+        <div class="icon">🧭</div><div class="label">发现</div>
+      </div>
+      <div class="tab" data-tab="profile" onclick="switchTab('profile')">
+        <div class="icon">👤</div><div class="label">我</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Chat Page ==================== -->
+  <div id="page-chat" class="page chat-page">
+    <div class="header">
+      <button class="back-btn" onclick="closeChat()">&larr;</button>
+      <h2 id="chat-title">聊天</h2>
+      <div class="header-right"><button class="back-btn" style="font-size:18px;margin:0" onclick="showKeyInfo()" id="chat-lock-btn">🔒</button></div>
+    </div>
+    <div id="chat-key-banner" class="key-banner" style="display:none">
+      ⚠️ 需要输入加密密钥才能发送消息
+      <span class="action" onclick="showPage('page-key-input')">输入密钥</span>
+    </div>
+    <div class="messages" id="chat-messages"></div>
+    <div class="input-bar">
+      <input type="text" id="chat-input" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendMsg()">
+      <button class="send-btn" id="chat-send-btn" onclick="sendMsg()">↑</button>
+    </div>
+  </div>
+
+  <!-- ==================== Key Info Page ==================== -->
+  <div id="page-key-info" class="page panel">
+    <div class="header">
+      <button class="back-btn" onclick="closePage('page-key-info')">&larr;</button>
+      <h2>加密详情</h2>
+      <div class="header-right"></div>
+    </div>
+    <div class="body" id="key-info-body"></div>
+  </div>
+
+  <!-- ==================== Key Input Page ==================== -->
+  <div id="page-key-input" class="page panel">
+    <div class="header">
+      <button class="back-btn" onclick="closePage('page-key-input')">&larr;</button>
+      <h2>导入密钥</h2>
+      <div class="header-right"></div>
+    </div>
+    <div class="body">
+      <div class="step-icon">🔑</div>
+      <div class="step-title">输入加密密钥</div>
+      <div class="step-desc" id="key-input-desc">输入对方分享给您的加密密钥</div>
+      <div class="input-group">
+        <textarea id="key-input-text" placeholder="粘贴 Base64 密钥..." style="font-size:13px"></textarea>
+        <div id="key-input-error" class="error" style="display:none"></div>
+      </div>
+      <button class="copy-btn" onclick="pasteKeyInput()">📋 从剪贴板粘贴</button>
+    </div>
+    <div class="bottom-actions">
+      <button class="btn btn-primary" onclick="doImportKey()">确认导入</button>
+    </div>
+  </div>
+
+  <!-- ==================== Add Contact Page ==================== -->
+  <div id="page-add-contact" class="page panel">
+    <div class="header">
+      <button class="back-btn" onclick="closePage('page-add-contact')">&larr;</button>
+      <h2>添加联系人</h2>
+      <div class="header-right"></div>
+    </div>
+    <div class="body">
+      <div class="step-icon">👤</div>
+      <div class="step-title">添加联系人</div>
+      <div class="input-group"><label>用户ID</label><input id="add-contact-id" placeholder="输入对方的用户ID"></div>
+      <div class="input-group"><label>备注名</label><input id="add-contact-name" placeholder="给对方取个名字"></div>
+      <div class="toggle-row"><label>自动生成新密钥</label><label class="switch"><input type="checkbox" id="add-contact-auto-key" checked onchange="toggleManualKey()"><span class="slider"></span></label></div>
+      <div class="input-group" id="add-contact-key-group" style="display:none"><label>共享密钥（Base64）</label><textarea id="add-contact-key" placeholder="粘贴密钥..." style="height:60px;font-size:13px"></textarea></div>
+    </div>
+    <div class="bottom-actions">
+      <button class="btn btn-primary" onclick="doAddContact()">添加</button>
+    </div>
+  </div>
+
+  <!-- ==================== Mnemonic View Page ==================== -->
+  <div id="page-mnemonic-view" class="page panel">
+    <div class="header">
+      <button class="back-btn" onclick="closePage('page-mnemonic-view')">&larr;</button>
+      <h2>查看助记词</h2>
+      <div class="header-right"></div>
+    </div>
+    <div class="body" id="mnemonic-view-body"></div>
+  </div>
+</div>
+
+<script src="crypto.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
