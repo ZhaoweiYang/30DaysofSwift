@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SecureChat - 端到端加密通讯</title>
+<style>
+/* ==================== Reset & Base ==================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --primary: #4A90D9;
+  --primary-light: rgba(74,144,217,0.1);
+  --green: #95EC69;
+  --bg: #EDEDED;
+  --bg-white: #fff;
+  --text: #1a1a1a;
+  --text-secondary: #888;
+  --border: #e5e5e5;
+  --red: #E74C3C;
+  --orange: #F39C12;
+}
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); }
+
+/* ==================== App Container (mobile frame) ==================== */
+#app {
+  max-width: 420px; height: 100vh; margin: 0 auto;
+  display: flex; flex-direction: column;
+  background: var(--bg-white);
+  box-shadow: 0 0 30px rgba(0,0,0,0.1);
+  overflow: hidden; position: relative;
+}
+
+/* ==================== Pages ==================== */
+.page { display: none; flex-direction: column; height: 100%; width: 100%; position: absolute; top: 0; left: 0; background: var(--bg-white); z-index: 1; }
+.page.active { display: flex; z-index: 2; }
+.page.slide-in { animation: slideIn 0.3s ease; }
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* ==================== Welcome Page ==================== */
+.welcome { justify-content: center; align-items: center; padding: 40px 32px; background: var(--bg-white); }
+.welcome .logo { width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, #4A90D9, #357ABD); display: flex; align-items: center; justify-content: center; margin-bottom: 24px; }
+.welcome .logo svg { width: 48px; height: 48px; fill: white; }
+.welcome h1 { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+.welcome .subtitle { color: var(--text-secondary); font-size: 16px; margin-bottom: 40px; }
+
+.feature-list { width: 100%; margin-bottom: 40px; }
+.feature-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.feature-row .icon { width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--primary); font-size: 20px; }
+.feature-row .text h3 { font-size: 15px; font-weight: 600; }
+.feature-row .text p { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+.btn { width: 100%; height: 50px; border: none; border-radius: 12px; font-size: 17px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+.btn:hover { opacity: 0.85; }
+.btn:active { opacity: 0.7; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-secondary { background: var(--primary-light); color: var(--primary); margin-top: 12px; }
+.btn-danger { background: var(--red); color: white; }
+.btn:disabled { background: #ccc; color: #999; cursor: not-allowed; }
+.btn-small { height: 40px; font-size: 14px; width: auto; padding: 0 20px; border-radius: 8px; }
+
+/* ==================== Header Bar ==================== */
+.header { display: flex; align-items: center; padding: 12px 16px; background: #F7F7F7; border-bottom: 0.5px solid var(--border); min-height: 56px; flex-shrink: 0; }
+.header .back-btn { background: none; border: none; font-size: 24px; color: var(--primary); cursor: pointer; margin-right: 8px; padding: 4px; }
+.header h2 { flex: 1; font-size: 17px; font-weight: 600; text-align: center; }
+.header .header-right { min-width: 40px; display: flex; justify-content: flex-end; }
+
+/* ==================== Mnemonic Creation ==================== */
+.create-page, .restore-page { background: var(--bg-white); }
+.create-page .body, .restore-page .body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; align-items: center; }
+.step-icon { font-size: 48px; margin-bottom: 16px; }
+.step-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.step-desc { font-size: 14px; color: var(--text-secondary); text-align: center; margin-bottom: 24px; line-height: 1.5; }
+
+.mnemonic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-bottom: 16px; }
+.mnemonic-word { display: flex; align-items: center; gap: 4px; padding: 8px; background: #F5F5F5; border-radius: 8px; font-size: 14px; }
+.mnemonic-word .num { font-size: 11px; color: var(--text-secondary); width: 18px; text-align: right; flex-shrink: 0; }
+.mnemonic-word .word { font-family: "SF Mono", "Fira Code", monospace; font-weight: 500; }
+
+.copy-btn { background: none; border: none; color: var(--primary); font-size: 14px; font-weight: 500; cursor: pointer; padding: 8px 16px; display: flex; align-items: center; gap: 6px; }
+
+.warning-box { background: rgba(243,156,18,0.08); border-radius: 12px; padding: 16px 20px; width: 100%; margin-bottom: 16px; }
+.warning-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+.warning-row:last-child { margin-bottom: 0; }
+.warning-row .icon { color: var(--orange); }
+
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin: 16px 0; font-size: 15px; width: 100%; }
+.checkbox-row input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+.bottom-actions { padding: 24px; flex-shrink: 0; display: flex; gap: 12px; }
+.bottom-actions .btn { flex: 1; }
+
+/* ==================== Input Fields ==================== */
+.input-group { width: 100%; margin-bottom: 16px; }
+.input-group label { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+.input-group input, .input-group textarea {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  background: #F5F5F5; font-size: 15px; font-family: inherit;
+  outline: none; transition: box-shadow 0.2s;
+}
+.input-group input:focus, .input-group textarea:focus { box-shadow: 0 0 0 2px rgba(74,144,217,0.3); }
+.input-group textarea { height: 100px; resize: none; font-family: "SF Mono", "Fira Code", monospace; font-size: 14px; }
+.input-group .hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.input-group .error { font-size: 13px; color: var(--red); margin-top: 4px; }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+.toggle-row label { font-size: 15px; }
+.switch { position: relative; width: 44px; height: 24px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider { position: absolute; inset: 0; background: #ccc; border-radius: 24px; cursor: pointer; transition: 0.3s; }
+.switch .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+.switch input:checked + .slider { background: var(--primary); }
+.switch input:checked + .slider:before { transform: translateX(20px); }
+
+/* ==================== Tab Bar ==================== */
+.tab-bar { display: flex; border-top: 0.5px solid var(--border); background: #F7F7F7; flex-shrink: 0; }
+.tab-bar .tab { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 6px 0 4px; cursor: pointer; color: var(--text-secondary); transition: color 0.2s; position: relative; }
+.tab-bar .tab.active { color: var(--primary); }
+.tab-bar .tab .icon { font-size: 22px; margin-bottom: 2px; }
+.tab-bar .tab .label { font-size: 10px; }
+.tab-bar .tab .badge { position: absolute; top: 2px; right: calc(50% - 18px); background: var(--red); color: white; font-size: 10px; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+
+/* ==================== Conversation List ==================== */
+.conv-list { flex: 1; overflow-y: auto; background: var(--bg-white); }
+.conv-item { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; transition: background 0.15s; border-bottom: 0.5px solid #f0f0f0; }
+.conv-item:hover { background: #F5F5F5; }
+.conv-item:active { background: #EBEBEB; }
+.conv-item .info { flex: 1; margin-left: 12px; overflow: hidden; }
+.conv-item .info .top { display: flex; justify-content: space-between; align-items: center; }
+.conv-item .info .name { font-size: 16px; font-weight: 500; }
+.conv-item .info .time { font-size: 12px; color: var(--text-secondary); }
+.conv-item .info .bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.conv-item .info .preview { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; display: flex; align-items: center; gap: 4px; }
+.conv-item .info .preview .lock { font-size: 10px; }
+.unread-badge { background: var(--red); color: white; font-size: 12px; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 5px; margin-left: 8px; flex-shrink: 0; }
+
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); }
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state p { font-size: 15px; margin-bottom: 4px; }
+
+/* ==================== Avatar ==================== */
+.avatar { border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; flex-shrink: 0; }
+.avatar-sm { width: 36px; height: 36px; font-size: 14px; border-radius: 6px; }
+.avatar-md { width: 48px; height: 48px; font-size: 18px; }
+.avatar-lg { width: 80px; height: 80px; font-size: 32px; border-radius: 12px; }
+.avatar-round { border-radius: 50%; }
+
+/* ==================== Chat View ==================== */
+.chat-page .messages { flex: 1; overflow-y: auto; background: var(--bg); padding: 8px 0; }
+.msg-row { display: flex; padding: 4px 12px; align-items: flex-start; gap: 8px; }
+.msg-row.mine { flex-direction: row-reverse; }
+.msg-bubble { max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 16px; line-height: 1.5; word-break: break-word; cursor: pointer; position: relative; }
+.msg-bubble.other { background: white; }
+.msg-bubble.mine { background: var(--green); }
+.msg-bubble .encrypted-text { font-size: 11px; color: var(--text-secondary); font-family: monospace; word-break: break-all; }
+.msg-time { font-size: 11px; color: var(--text-secondary); margin-top: 2px; display: flex; align-items: center; gap: 4px; }
+.msg-row.mine .msg-meta { text-align: right; }
+
+.key-banner { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: rgba(243,156,18,0.1); font-size: 13px; flex-shrink: 0; }
+.key-banner .action { color: var(--primary); font-weight: 500; cursor: pointer; margin-left: auto; white-space: nowrap; }
+
+/* ==================== Input Bar ==================== */
+.input-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #F7F7F7; border-top: 0.5px solid var(--border); flex-shrink: 0; }
+.input-bar input { flex: 1; height: 36px; border: 0.5px solid #ddd; border-radius: 18px; padding: 0 14px; font-size: 16px; background: white; outline: none; }
+.input-bar input:focus { border-color: var(--primary); }
+.send-btn { width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--primary); color: white; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.send-btn:disabled { background: #ccc; }
+
+/* ==================== Key Info / Profile Panels ==================== */
+.panel { background: var(--bg-white); }
+.panel .body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; align-items: center; }
+.info-card { width: 100%; display: flex; justify-content: space-between; padding: 12px 16px; background: #F5F5F5; border-radius: 10px; margin-bottom: 8px; font-size: 14px; }
+.info-card .label { color: var(--text-secondary); }
+.info-card .value { font-family: "SF Mono", monospace; font-weight: 500; }
+.info-card .value.green { color: #2ECC71; }
+
+.settings-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 0.5px solid #f0f0f0; cursor: pointer; }
+.settings-item:hover { background: #F9F9F9; }
+.settings-item .si-icon { font-size: 20px; width: 28px; text-align: center; }
+.settings-item .si-label { flex: 1; font-size: 15px; }
+.settings-item .si-value { font-size: 14px; color: var(--text-secondary); }
+.settings-item .si-arrow { color: #ccc; }
+
+.profile-header { display: flex; flex-direction: column; align-items: center; padding: 24px; }
+.profile-header .name { font-size: 22px; font-weight: 700; margin-top: 12px; }
+.profile-header .uid { font-size: 13px; font-family: monospace; color: var(--text-secondary); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+
+.section-title { font-size: 13px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 16px 16px 8px; }
+
+/* ==================== Contact List ==================== */
+.contact-item { display: flex; align-items: center; padding: 12px 16px; cursor: pointer; border-bottom: 0.5px solid #f0f0f0; }
+.contact-item:hover { background: #F5F5F5; }
+.contact-item .cinfo { margin-left: 12px; }
+.contact-item .cname { font-size: 16px; font-weight: 500; }
+.contact-item .cstatus { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.contact-item .cstatus .dot { width: 6px; height: 6px; border-radius: 50%; }
+.contact-item .cstatus .dot.on { background: #2ECC71; }
+.contact-item .cstatus .dot.off { background: var(--orange); }
+
+.search-bar { padding: 8px 12px; background: var(--bg-white); flex-shrink: 0; }
+.search-bar-inner { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #F5F5F5; border-radius: 8px; color: var(--text-secondary); font-size: 14px; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
+
+.flow-box { background: #F5F5F5; border-radius: 10px; padding: 16px; width: 100%; margin-top: 16px; text-align: center; }
+.flow-box .flow-title { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.flow-box .flow-text { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+.discover-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 0.5px solid #f0f0f0; }
+.discover-item .di-icon { font-size: 22px; color: var(--primary); width: 28px; text-align: center; }
+.discover-item .di-label { font-size: 16px; flex: 1; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Welcome Page -->
+  <div id="page-welcome" class="page welcome active">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg></div>
+    <h1>SecureChat</h1>
+    <p class="subtitle">端到端加密通讯</p>
+    <div class="feature-list">
+      <div class="feature-row"><div class="icon">🔑</div><div class="text"><h3>助记词账户</h3><p>无需手机号或邮箱，用助记词创建身份</p></div></div>
+      <div class="feature-row"><div class="icon">🔒</div><div class="text"><h3>本地加密</h3><p>消息在发送前在本地加密，平台无法读取</p></div></div>
+      <div class="feature-row"><div class="icon">🔄</div><div class="text"><h3>密钥交换</h3><p>与联系人共享密钥，实现安全通信</p></div></div>
+    </div>
+    <button class="btn btn-primary" onclick="showPage('page-create')">创建新账户</button>
+    <button class="btn btn-secondary" onclick="showPage('page-restore')">恢复已有账户</button>
+  </div>
+
+  <!-- Create Account -->
+  <div id="page-create" class="page create-page">
+    <div class="header"><button class="back-btn" onclick="showPage('page-welcome')">&larr;</button><h2>创建账户</h2><div class="header-right"></div></div>
+    <div class="body" id="create-body"></div>
+    <div class="bottom-actions" id="create-actions"></div>
+  </div>
+
+  <!-- Restore Account -->
+  <div id="page-restore" class="page restore-page">
+    <div class="header"><button class="back-btn" onclick="showPage('page-welcome')">&larr;</button><h2>恢复账户</h2><div class="header-right"></div></div>
+    <div class="body">
+      <div class="step-icon">🔄</div>
+      <div class="step-title">恢复账户</div>
+      <div class="step-desc">输入您的12个助记词来恢复账户</div>
+      <div class="input-group">
+        <textarea id="restore-input" placeholder="输入12个助记词，用空格分隔..."></textarea>
+        <div id="restore-word-count" class="hint">0 / 12 个词</div>
+        <div id="restore-error" class="error" style="display:none"></div>
+      </div>
+      <button class="copy-btn" onclick="pasteRestore()">📋 从剪贴板粘贴</button>
+    </div>
+    <div class="bottom-actions"><button class="btn btn-primary" id="restore-btn" disabled onclick="doRestore()">恢复账户</button></div>
+  </div>
+
+  <!-- Main App (Tabs) -->
+  <div id="page-main" class="page">
+    <div id="tab-content" style="flex:1; overflow:hidden; position:relative;"></div>
+    <div class="tab-bar">
+      <div class="tab active" data-tab="chats" onclick="switchTab('chats')"><div class="icon">💬</div><div class="label">消息</div><div class="badge" id="tab-badge-chats" style="display:none"></div></div>
+      <div class="tab" data-tab="contacts" onclick="switchTab('contacts')"><div class="icon">👥</div><div class="label">通讯录</div></div>
+      <div class="tab" data-tab="discover" onclick="switchTab('discover')"><div class="icon">🧭</div><div class="label">发现</div></div>
+      <div class="tab" data-tab="profile" onclick="switchTab('profile')"><div class="icon">👤</div><div class="label">我</div></div>
+    </div>
+  </div>
+
+  <!-- Chat Page -->
+  <div id="page-chat" class="page chat-page">
+    <div class="header"><button class="back-btn" onclick="closeChat()">&larr;</button><h2 id="chat-title">聊天</h2><div class="header-right"><button class="back-btn" style="font-size:18px;margin:0" onclick="showKeyInfo()" id="chat-lock-btn">🔒</button></div></div>
+    <div id="chat-key-banner" class="key-banner" style="display:none">⚠️ 需要输入加密密钥才能发送消息<span class="action" onclick="showPage('page-key-input')">输入密钥</span></div>
+    <div class="messages" id="chat-messages"></div>
+    <div class="input-bar"><input type="text" id="chat-input" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendMsg()"><button class="send-btn" id="chat-send-btn" onclick="sendMsg()">↑</button></div>
+  </div>
+
+  <!-- Key Info Page -->
+  <div id="page-key-info" class="page panel">
+    <div class="header"><button class="back-btn" onclick="closePage('page-key-info')">&larr;</button><h2>加密详情</h2><div class="header-right"></div></div>
+    <div class="body" id="key-info-body"></div>
+  </div>
+
+  <!-- Key Input Page -->
+  <div id="page-key-input" class="page panel">
+    <div class="header"><button class="back-btn" onclick="closePage('page-key-input')">&larr;</button><h2>导入密钥</h2><div class="header-right"></div></div>
+    <div class="body">
+      <div class="step-icon">🔑</div>
+      <div class="step-title">输入加密密钥</div>
+      <div class="step-desc" id="key-input-desc">输入对方分享给您的加密密钥</div>
+      <div class="input-group"><textarea id="key-input-text" placeholder="粘贴 Base64 密钥..." style="font-size:13px"></textarea><div id="key-input-error" class="error" style="display:none"></div></div>
+      <button class="copy-btn" onclick="pasteKeyInput()">📋 从剪贴板粘贴</button>
+    </div>
+    <div class="bottom-actions"><button class="btn btn-primary" onclick="doImportKey()">确认导入</button></div>
+  </div>
+
+  <!-- Add Contact Page -->
+  <div id="page-add-contact" class="page panel">
+    <div class="header"><button class="back-btn" onclick="closePage('page-add-contact')">&larr;</button><h2>添加联系人</h2><div class="header-right"></div></div>
+    <div class="body">
+      <div class="step-icon">👤</div>
+      <div class="step-title">添加联系人</div>
+      <div class="input-group"><label>用户ID</label><input id="add-contact-id" placeholder="输入对方的用户ID"></div>
+      <div class="input-group"><label>备注名</label><input id="add-contact-name" placeholder="给对方取个名字"></div>
+      <div class="toggle-row"><label>自动生成新密钥</label><label class="switch"><input type="checkbox" id="add-contact-auto-key" checked onchange="toggleManualKey()"><span class="slider"></span></label></div>
+      <div class="input-group" id="add-contact-key-group" style="display:none"><label>共享密钥（Base64）</label><textarea id="add-contact-key" placeholder="粘贴密钥..." style="height:60px;font-size:13px"></textarea></div>
+    </div>
+    <div class="bottom-actions"><button class="btn btn-primary" onclick="doAddContact()">添加</button></div>
+  </div>
+
+  <!-- Mnemonic View Page -->
+  <div id="page-mnemonic-view" class="page panel">
+    <div class="header"><button class="back-btn" onclick="closePage('page-mnemonic-view')">&larr;</button><h2>查看助记词</h2><div class="header-right"></div></div>
+    <div class="body" id="mnemonic-view-body"></div>
+  </div>
+</div>
+
+<script>
+// ==================== Crypto Module ====================
+const WORD_LIST=["abandon","ability","able","about","above","absent","absorb","abstract","absurd","abuse","access","accident","account","accuse","achieve","acid","acoustic","acquire","across","act","action","actor","actress","actual","adapt","add","addict","address","adjust","admit","adult","advance","advice","aerobic","affair","afford","afraid","again","age","agent","agree","ahead","aim","air","airport","aisle","alarm","album","alcohol","alert","alien","all","alley","allow","almost","alone","alpha","already","also","alter","always","amateur","amazing","among","amount","amused","analyst","anchor","ancient","anger","angle","angry","animal","ankle","announce","annual","another","answer","antenna","antique","anxiety","any","apart","apology","appear","apple","approve","april","arch","arctic","area","arena","argue","arm","armed","armor","army","around","arrange","arrest","arrive","arrow","art","artefact","artist","artwork","ask","aspect","assault","asset","assist","assume","asthma","athlete","atom","attack","attend","attitude","attract","auction","audit","august","aunt","author","auto","autumn","average","avocado","avoid","awake","aware","awesome","awful","awkward","axis","baby","bachelor","bacon","badge","bag","balance","balcony","ball","bamboo","banana","banner","bar","barely","bargain","barrel","base","basic","basket","battle","beach","bean","beauty","because","become","beef","before","begin","behave","behind","believe","below","belt","bench","benefit","best","betray","better","between","beyond","bicycle","bid","bike","bind","biology","bird","birth","bitter","black","blade","blame","blanket","blast","bleak","bless","blind","blood","blossom","blow","blue","blur","blush","board","boat","body","boil","bomb","bone","bonus","book","boost","border","boring","borrow","boss","bottom","bounce","box","boy","bracket","brain","brand","brass","brave","bread","breeze","brick","bridge","brief","bright","bring","brisk","broccoli","broken","bronze","broom","brother","brown","brush","bubble","buddy","budget","buffalo","build","bulb","bulk","bullet","bundle","bunny","burden","burger","burst","bus","business","busy","butter","buyer","buzz","cabbage","cabin","cable","cactus"];
+const CryptoUtils={
+  generateMnemonic(n=12){const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a).map(b=>WORD_LIST[b%WORD_LIST.length]).join(' ')},
+  validateMnemonic(m){const w=m.trim().toLowerCase().split(/\s+/);return w.length===12&&w.every(x=>WORD_LIST.includes(x))},
+  async deriveUserID(m){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(m));return Array.from(new Uint8Array(h).slice(0,8)).map(b=>b.toString(16).padStart(2,'0')).join('')},
+  deriveDisplayName(m){const w=m.trim().split(/\s+/);return w.length<2?'User':w.slice(0,2).map(x=>x[0].toUpperCase()+x.slice(1)).join('')},
+  async generateConversationKey(){return crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt'])},
+  async exportKey(k){const r=await crypto.subtle.exportKey('raw',k);return btoa(String.fromCharCode(...new Uint8Array(r)))},
+  async importKey(b){try{const r=Uint8Array.from(atob(b),c=>c.charCodeAt(0));return crypto.subtle.importKey('raw',r,{name:'AES-GCM'},true,['encrypt','decrypt'])}catch{return null}},
+  async keyFingerprint(k){const r=await crypto.subtle.exportKey('raw',k);const h=await crypto.subtle.digest('SHA-256',r);return Array.from(new Uint8Array(h).slice(0,4)).map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join(':')},
+  async encrypt(p,k){const iv=crypto.getRandomValues(new Uint8Array(12));const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(p));const m=new Uint8Array(iv.length+c.byteLength);m.set(iv);m.set(new Uint8Array(c),iv.length);return btoa(String.fromCharCode(...m))},
+  async decrypt(b,k){try{const m=Uint8Array.from(atob(b),c=>c.charCodeAt(0));const d=await crypto.subtle.decrypt({name:'AES-GCM',iv:m.slice(0,12)},k,m.slice(12));return new TextDecoder().decode(d)}catch{return null}}
+};
+
+// ==================== Store ====================
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,9)}
+function hashCode(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return h}
+const Store={
+  _listeners:[],_data:{user:null,mnemonic:null,contacts:[],conversations:{}},
+  save(){localStorage.setItem('secureChat',JSON.stringify(this._data));this._notify()},
+  load(){const r=localStorage.getItem('secureChat');if(r)try{this._data=JSON.parse(r)}catch{}},
+  clear(){this._data={user:null,mnemonic:null,contacts:[],conversations:{}};localStorage.removeItem('secureChat');this._notify()},
+  onChange(fn){this._listeners.push(fn)},_notify(){this._listeners.forEach(fn=>fn(this._data))},
+  get user(){return this._data.user},get mnemonic(){return this._data.mnemonic},get contacts(){return this._data.contacts},get conversations(){return this._data.conversations},get isLoggedIn(){return!!this._data.user},
+  async createAccount(m,d){const id=await CryptoUtils.deriveUserID(m);const n=d||CryptoUtils.deriveDisplayName(m);const c=['#4A90D9','#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#E67E22','#3498DB'];this._data.user={id,displayName:n,avatarColor:c[Math.abs(hashCode(id))%c.length],createdAt:Date.now()};this._data.mnemonic=m;this.save()},
+  logout(){this.clear()},
+  async addContact(id,dn,kb){if(this._data.contacts.find(c=>c.id===id))return;const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],conversationKeyB64:kb||null,addedAt:Date.now()});this._data.conversations[id]={messages:[],unread:0};this.save()},
+  updateContactKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.conversationKeyB64=kb;this.save()},
+  getContact(id){return this._data.contacts.find(c=>c.id===id)},
+  async sendMessage(ci,pt){const c=this.getContact(ci);if(!c?.conversationKeyB64||!this._data.user)return false;const k=await CryptoUtils.importKey(c.conversationKeyB64);if(!k)return false;const e=await CryptoUtils.encrypt(pt,k);this._data.conversations[ci].messages.push({id:uid(),senderId:this._data.user.id,recipientId:ci,encrypted:e,timestamp:Date.now(),isRead:true});this.save();this._simulateReply(ci,k);return true},
+  async decryptMessage(ci,m){const c=this.getContact(ci);if(!c?.conversationKeyB64)return'[需要密钥解密]';const k=await CryptoUtils.importKey(c.conversationKeyB64);if(!k)return'[密钥无效]';return await CryptoUtils.decrypt(m.encrypted,k)||'[解密失败]'},
+  markRead(ci){const v=this._data.conversations[ci];if(v){v.unread=0;v.messages.forEach(m=>m.isRead=true);this.save()}},
+  getLastMessage(ci){const m=this._data.conversations[ci]?.messages;return m?.length?m[m.length-1]:null},
+  getTotalUnread(){return Object.values(this._data.conversations).reduce((s,c)=>s+(c.unread||0),0)},
+  async _simulateReply(ci,k){const rp=['收到！','好的，明白了','👍','稍等一下','没问题','我看看','这个不错','同意','OK!','马上处理','谢谢','晚点再聊'];setTimeout(async()=>{const r=rp[Math.floor(Math.random()*rp.length)];const e=await CryptoUtils.encrypt(r,k);const c=this.getContact(ci);if(!c)return;this._data.conversations[ci].messages.push({id:uid(),senderId:ci,recipientId:this._data.user.id,encrypted:e,timestamp:Date.now(),isRead:false});this._data.conversations[ci].unread++;this.save()},1500+Math.random()*2000)},
+  async addDemoContacts(){const k1=await CryptoUtils.generateConversationKey();const k2=await CryptoUtils.generateConversationKey();const k3=await CryptoUtils.generateConversationKey();await this.addContact('demo001','Alice',await CryptoUtils.exportKey(k1));await this.addContact('demo002','Bob',await CryptoUtils.exportKey(k2));await this.addContact('demo003','小明',await CryptoUtils.exportKey(k3))}
+};
+
+// ==================== App Logic ====================
+let currentChatContact=null,createStep=0,createMnemonic='',createConfirmed=false,currentTab='chats',chatRefreshTimer=null,pageStack=[];
+
+document.addEventListener('DOMContentLoaded',()=>{Store.load();Store.onChange(()=>{refreshCurrentView();updateBadges()});if(Store.isLoggedIn){showPage('page-main');switchTab('chats')}const ri=document.getElementById('restore-input');if(ri)ri.addEventListener('input',()=>{const w=ri.value.trim().split(/\s+/).filter(Boolean);document.getElementById('restore-word-count').textContent=`${w.length} / 12 个词`;document.getElementById('restore-btn').disabled=w.length!==12})});
+
+function showPage(id,slide=true){const c=document.querySelector('.page.active');if(c&&c.id!==id){pageStack.push(c.id);c.classList.remove('active')}const t=document.getElementById(id);t.classList.add('active');if(slide)t.classList.add('slide-in');setTimeout(()=>t.classList.remove('slide-in'),300);if(id==='page-create')initCreateFlow();if(id==='page-main'){switchTab(currentTab);updateBadges()}}
+function closePage(id){document.getElementById(id).classList.remove('active');if(pageStack.length){const p=pageStack.pop();document.getElementById(p).classList.add('active')}}
+
+function initCreateFlow(){createStep=0;createMnemonic=CryptoUtils.generateMnemonic();createConfirmed=false;renderCreateStep()}
+function renderCreateStep(){const body=document.getElementById('create-body'),actions=document.getElementById('create-actions');if(createStep===0){const w=createMnemonic.split(' ');body.innerHTML=`<div class="step-icon">🔑</div><div class="step-title">您的助记词</div><div class="step-desc">以下12个词是您的账户密钥。<br>请务必安全保存，丢失后无法找回。</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyMnemonic()">📋 复制助记词</button>`;actions.innerHTML=`<button class="btn btn-primary" onclick="createStep=1;renderCreateStep()">下一步</button>`}else if(createStep===1){body.innerHTML=`<div class="step-icon">⚠️</div><div class="step-title">确认备份</div><div class="step-desc">请确认您已安全保存助记词。<br>这是恢复账户的唯一方式。</div><div class="warning-box"><div class="warning-row"><span class="icon">⚠️</span> 助记词是您账户的唯一凭证</div><div class="warning-row"><span class="icon">⚠️</span> 请勿截图或在线存储助记词</div><div class="warning-row"><span class="icon">⚠️</span> 建议手写在纸上并妥善保管</div><div class="warning-row"><span class="icon">⚠️</span> 任何人获得助记词即可控制账户</div></div><div class="checkbox-row"><input type="checkbox" id="confirm-backup" onchange="createConfirmed=this.checked;renderCreateActions()"> <label for="confirm-backup">我已安全保存助记词</label></div>`;actions.innerHTML=`<button class="btn btn-secondary" onclick="createStep=0;renderCreateStep()">返回</button><button class="btn btn-primary" id="create-next-btn" disabled onclick="createStep=2;renderCreateStep()">下一步</button>`}else if(createStep===2){const dn=CryptoUtils.deriveDisplayName(createMnemonic);body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:#4A90D9">${dn[0]}</div><div class="step-title" style="margin-top:16px">设置昵称</div><div class="step-desc">给自己取一个昵称吧</div><div class="input-group"><input id="create-name" placeholder="输入昵称（留空使用默认: ${dn}）"></div><div style="font-size:13px;color:var(--text-secondary)">您的ID将在创建后显示</div>`;actions.innerHTML=`<button class="btn btn-primary" onclick="doCreateAccount()">完成创建</button>`}}
+function renderCreateActions(){const b=document.getElementById('create-next-btn');if(b)b.disabled=!createConfirmed}
+function copyMnemonic(){navigator.clipboard.writeText(createMnemonic).then(()=>{const b=document.querySelector('.create-page .copy-btn');if(b){b.textContent='✅ 已复制';setTimeout(()=>b.textContent='📋 复制助记词',2000)}})}
+async function doCreateAccount(){const n=document.getElementById('create-name')?.value.trim()||null;await Store.createAccount(createMnemonic,n);await Store.addDemoContacts();showPage('page-main');switchTab('chats')}
+async function pasteRestore(){try{const t=await navigator.clipboard.readText();document.getElementById('restore-input').value=t;document.getElementById('restore-input').dispatchEvent(new Event('input'))}catch{}}
+async function doRestore(){const i=document.getElementById('restore-input').value.trim().toLowerCase();const n=i.split(/\s+/).join(' ');if(!CryptoUtils.validateMnemonic(n)){document.getElementById('restore-error').style.display='block';document.getElementById('restore-error').textContent='助记词无效，请检查拼写';return}document.getElementById('restore-error').style.display='none';await Store.createAccount(n);await Store.addDemoContacts();showPage('page-main');switchTab('chats')}
+
+function switchTab(t){currentTab=t;document.querySelectorAll('.tab-bar .tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));const c=document.getElementById('tab-content');if(t==='chats')renderChatsTab(c);else if(t==='contacts')renderContactsTab(c);else if(t==='discover')renderDiscoverTab(c);else if(t==='profile')renderProfileTab(c)}
+function updateBadges(){const t=Store.getTotalUnread();const b=document.getElementById('tab-badge-chats');if(t>0){b.style.display='flex';b.textContent=t>99?'99+':t}else b.style.display='none'}
+
+function renderChatsTab(container){const contacts=Store.contacts.slice().sort((a,b)=>{const la=Store.getLastMessage(a.id)?.timestamp||a.addedAt;const lb=Store.getLastMessage(b.id)?.timestamp||b.addedAt;return lb-la});let h=`<div class="header" style="position:relative"><div style="width:40px">${Store.user?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor};cursor:pointer" onclick="switchTab('profile')">${Store.user.displayName[0]}</div>`:''}</div><h2>消息</h2><div class="header-right"><button class="back-btn" style="font-size:22px;margin:0" onclick="showPage('page-add-contact')">➕</button></div></div><div class="search-bar"><div class="search-bar-inner">🔍 搜索</div></div>`;if(!contacts.length){h+=`<div class="empty-state"><div class="icon">💬</div><p>暂无会话</p><p style="font-size:13px">添加联系人开始聊天</p></div>`}else{h+=`<div class="conv-list">`;for(const c of contacts){const lm=Store.getLastMessage(c.id);const u=Store.conversations[c.id]?.unread||0;const t=lm?formatTime(lm.timestamp):'';h+=`<div class="conv-item" onclick="openChat('${c.id}')"><div class="avatar avatar-md" style="background:${c.avatarColor}">${c.displayName[0]}</div><div class="info"><div class="top"><span class="name">${esc(c.displayName)}</span><span class="time">${t}</span></div><div class="bottom"><span class="preview"><span class="lock">🔒</span> <span id="conv-preview-${c.id}">${lm?'...':'[加密会话已建立]'}</span></span>${u>0?`<span class="unread-badge">${u}</span>`:''}</div></div></div>`}h+=`</div>`}container.innerHTML=h;for(const c of contacts){const lm=Store.getLastMessage(c.id);if(lm)Store.decryptMessage(c.id,lm).then(t=>{const el=document.getElementById(`conv-preview-${c.id}`);if(el)el.textContent=t.length>20?t.slice(0,20)+'...':t})}}
+
+function renderContactsTab(c){let h=`<div class="header"><div style="width:40px"></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div class="section-title">联系人 (${Store.contacts.length})</div><div style="flex:1;overflow-y:auto">`;for(const x of Store.contacts){const hk=!!x.conversationKeyB64;h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div class="cstatus"><span class="dot ${hk?'on':'off'}"></span>${hk?'加密已建立':'待建立加密'}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
+function renderDiscoverTab(c){c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>发现</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="discover-item"><span class="di-icon">📷</span><span class="di-label">扫一扫</span></div><div class="discover-item"><span class="di-icon">📱</span><span class="di-label">摇一摇</span></div><div style="height:12px;background:var(--bg)"></div><div class="discover-item"><span class="di-icon">🧩</span><span class="di-label">小程序</span></div></div>`}
+function renderProfileTab(c){const u=Store.user;if(!u)return;c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
+function viewMnemonic(){const m=Store.mnemonic;if(!m)return;const w=m.split(' ');document.getElementById('mnemonic-view-body').innerHTML=`<div class="step-icon">👁️‍🗨️</div><div class="step-title">您的助记词</div><div class="step-desc">请勿在公共场合展示</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyText('${m}',this)">📋 复制助记词</button>`;showPage('page-mnemonic-view')}
+function doLogout(){if(confirm('退出后需要助记词才能恢复账户。确认退出？')){Store.logout();pageStack=[];document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-welcome').classList.add('active')}}
+
+function openChat(ci){const c=Store.getContact(ci);if(!c)return;currentChatContact=ci;document.getElementById('chat-title').textContent=c.displayName;const hk=!!c.conversationKeyB64;document.getElementById('chat-key-banner').style.display=hk?'none':'flex';document.getElementById('chat-lock-btn').textContent=hk?'🔒':'🔓';document.getElementById('chat-send-btn').disabled=!hk;Store.markRead(ci);showPage('page-chat');renderMessages();clearInterval(chatRefreshTimer);chatRefreshTimer=setInterval(()=>{if(currentChatContact===ci)renderMessages()},500)}
+function closeChat(){clearInterval(chatRefreshTimer);currentChatContact=null;closePage('page-chat');if(currentTab==='chats'){renderChatsTab(document.getElementById('tab-content'))}}
+async function renderMessages(){const ci=currentChatContact;if(!ci)return;const cv=Store.conversations[ci];if(!cv)return;const ct=document.getElementById('chat-messages');const ui=Store.user?.id;const co=Store.getContact(ci);Store.markRead(ci);let h='';for(const m of cv.messages){const im=m.senderId===ui;const t=await Store.decryptMessage(ci,m);const tm=formatTimeShort(m.timestamp);const av=im?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor}">${Store.user.displayName[0]}</div>`:`<div class="avatar avatar-sm" style="background:${co.avatarColor}">${co.displayName[0]}</div>`;h+=`<div class="msg-row ${im?'mine':''}">${av}<div><div class="msg-bubble ${im?'mine':'other'}" onclick="toggleEncrypted(this,'${m.encrypted.slice(0,60).replace(/'/g,"\\'")}...')"><span class="decrypted-text">${esc(t)}</span></div><div class="msg-meta msg-time">${tm}</div></div></div>`}ct.innerHTML=h;ct.scrollTop=ct.scrollHeight}
+function toggleEncrypted(el,enc){const d=el.querySelector('.decrypted-text');const e=el.querySelector('.encrypted-text');if(e){e.remove();d.style.display=''}else{d.style.display='none';const s=document.createElement('span');s.className='encrypted-text';s.textContent='🔒 '+enc;el.appendChild(s)}}
+async function sendMsg(){const i=document.getElementById('chat-input');const t=i.value.trim();if(!t||!currentChatContact)return;i.value='';await Store.sendMessage(currentChatContact,t);renderMessages()}
+
+async function showKeyInfo(){const ci=currentChatContact;const co=Store.getContact(ci);if(!co)return;const body=document.getElementById('key-info-body');const hk=!!co.conversationKeyB64;if(hk){const k=await CryptoUtils.importKey(co.conversationKeyB64);const fp=k?await CryptoUtils.keyFingerprint(k):'N/A';body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:#2ECC71;font-size:36px">🔒</div><div class="step-title" style="margin-top:16px">加密信息</div><div style="width:100%;margin-top:16px"><div class="info-card"><span class="label">加密状态</span><span class="value green">已建立</span></div><div class="info-card"><span class="label">加密算法</span><span class="value">AES-256-GCM</span></div><div class="info-card"><span class="label">密钥指纹</span><span class="value">${fp}</span></div></div><div style="margin-top:24px;text-align:center"><div class="step-desc">分享密钥给 ${esc(co.displayName)}<br>对方输入后即可解密您发送的消息</div><button class="btn btn-primary btn-small" onclick="copyText('${co.conversationKeyB64}',this)" style="margin:0 auto">📋 复制密钥</button></div><div class="flow-box"><div class="flow-title">ℹ️ 加密流程说明</div><div class="flow-text">发送方用密钥在本地加密消息 →<br>平台转发加密数据 →<br>接收方用相同密钥在本地解密</div></div>`}else{body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:var(--orange);font-size:36px">🔓</div><div class="step-title" style="margin-top:16px">加密信息</div><div class="step-desc">尚未建立加密连接<br>您需要获取对方的密钥或生成新密钥</div><button class="btn btn-primary btn-small" onclick="generateKeyForContact('${ci}')">🔑 生成新密钥</button><div style="height:16px"></div><button class="btn btn-secondary btn-small" onclick="closePage('page-key-info');showPage('page-key-input')">📥 输入对方密钥</button>`}showPage('page-key-info')}
+async function generateKeyForContact(ci){const k=await CryptoUtils.generateConversationKey();Store.updateContactKey(ci,await CryptoUtils.exportKey(k));if(currentChatContact===ci){document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒';document.getElementById('chat-send-btn').disabled=false}closePage('page-key-info');showKeyInfo()}
+async function pasteKeyInput(){try{const t=await navigator.clipboard.readText();document.getElementById('key-input-text').value=t.trim()}catch{}}
+async function doImportKey(){const kb=document.getElementById('key-input-text').value.trim();const k=await CryptoUtils.importKey(kb);if(!k){document.getElementById('key-input-error').style.display='block';document.getElementById('key-input-error').textContent='密钥格式无效，请检查后重试';return}document.getElementById('key-input-error').style.display='none';Store.updateContactKey(currentChatContact,kb);document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒';document.getElementById('chat-send-btn').disabled=false;document.getElementById('key-input-text').value='';closePage('page-key-input')}
+function toggleManualKey(){document.getElementById('add-contact-key-group').style.display=document.getElementById('add-contact-auto-key').checked?'none':'block'}
+async function doAddContact(){const id=document.getElementById('add-contact-id').value.trim();const nm=document.getElementById('add-contact-name').value.trim();if(!id||!nm)return alert('请填写用户ID和备注名');let kb=null;if(document.getElementById('add-contact-auto-key').checked){const k=await CryptoUtils.generateConversationKey();kb=await CryptoUtils.exportKey(k)}else{kb=document.getElementById('add-contact-key').value.trim()||null}await Store.addContact(id,nm,kb);document.getElementById('add-contact-id').value='';document.getElementById('add-contact-name').value='';document.getElementById('add-contact-key').value='';document.getElementById('add-contact-auto-key').checked=true;toggleManualKey();closePage('page-add-contact')}
+
+function refreshCurrentView(){if(currentChatContact)renderMessages();const c=document.getElementById('tab-content');if(c&&document.getElementById('page-main').classList.contains('active'))switchTab(currentTab)}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function formatTime(ts){const d=new Date(ts);const n=new Date();if(d.toDateString()===n.toDateString())return d.toTimeString().slice(0,5);const y=new Date(n);y.setDate(y.getDate()-1);if(d.toDateString()===y.toDateString())return'昨天';return`${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`}
+function formatTimeShort(ts){return new Date(ts).toTimeString().slice(0,5)}
+function copyText(t,b){navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='✅ 已复制';setTimeout(()=>b.textContent=o,2000)}})}
+</script>
+</body>
+</html>
