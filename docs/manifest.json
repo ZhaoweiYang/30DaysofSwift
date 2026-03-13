@@ -1,0 +1,22 @@
+{
+  "name": "SecureChat - 端到端加密通讯",
+  "short_name": "SecureChat",
+  "description": "端到端加密通讯应用，本地加密，安全通信",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4A90D9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%234A90D9'/><path d='M96 40c-22.1 0-40 17.9-40 40v16H48c-4.4 0-8 3.6-8 8v48c0 4.4 3.6 8 8 8h96c4.4 0 8-3.6 8-8v-48c0-4.4-3.6-8-8-8h-8V80c0-22.1-17.9-40-40-40zm0 16c13.3 0 24 10.7 24 24v16H72V80c0-13.3 10.7-24 24-24zm0 64c6.6 0 12 5.4 12 12s-5.4 12-12 12-12-5.4-12-12 5.4-12 12-12z' fill='white'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='100' fill='%234A90D9'/><path d='M256 96c-58.7 0-106.7 48-106.7 106.7V248h-21.3c-11.8 0-21.3 9.6-21.3 21.3V400c0 11.8 9.6 21.3 21.3 21.3h256c11.8 0 21.3-9.6 21.3-21.3V269.3c0-11.8-9.6-21.3-21.3-21.3h-21.3v-45.3C362.7 144 314.7 96 256 96zm0 42.7c35.3 0 64 28.7 64 64V248H192v-45.3c0-35.3 28.7-64 64-64zM256 320c17.7 0 32 14.3 32 32s-14.3 32-32 32-32-14.3-32-32 14.3-32 32-32z' fill='white'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

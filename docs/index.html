@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>SecureChat - 端到端加密通讯</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4A90D9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SecureChat">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%234A90D9'/></svg>">
 <style>
 /* ==================== Reset & Base ==================== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -207,6 +213,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .flow-box .flow-title { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; }
 .flow-box .flow-text { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
 
+/* ==================== PWA Install Banner ==================== */
+.pwa-install-banner { display: none; position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 420px; background: white; border-top: 1px solid var(--border); padding: 12px 16px; z-index: 1000; box-shadow: 0 -4px 12px rgba(0,0,0,0.1); }
+.pwa-install-banner .pwa-inner { display: flex; align-items: center; gap: 12px; }
+.pwa-install-banner .pwa-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #4A90D9, #357ABD); display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; flex-shrink: 0; }
+.pwa-install-banner .pwa-text { flex: 1; }
+.pwa-install-banner .pwa-text h4 { font-size: 14px; font-weight: 600; }
+.pwa-install-banner .pwa-text p { font-size: 12px; color: var(--text-secondary); }
+.pwa-install-banner .pwa-actions { display: flex; gap: 8px; }
+.pwa-install-banner .pwa-actions button { border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.pwa-install-banner .pwa-install { background: var(--primary); color: white; }
+.pwa-install-banner .pwa-dismiss { background: #f0f0f0; color: var(--text-secondary); }
+.pwa-push-banner { display: none; padding: 10px 16px; background: rgba(74,144,217,0.08); border-bottom: 0.5px solid var(--border); flex-shrink: 0; cursor: pointer; }
+.pwa-push-banner .pwa-push-inner { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.pwa-push-banner .pwa-push-inner .action { color: var(--primary); font-weight: 500; margin-left: auto; }
+
 </style>
 </head>
 <body>
@@ -314,6 +335,18 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   </div>
 </div>
 
+<!-- PWA Install Banner -->
+<div class="pwa-install-banner" id="pwa-install-banner">
+  <div class="pwa-inner">
+    <div class="pwa-icon">🔒</div>
+    <div class="pwa-text"><h4>安装 SecureChat</h4><p>安装后可离线使用，并接收消息推送</p></div>
+    <div class="pwa-actions">
+      <button class="pwa-dismiss" onclick="dismissInstall()">忽略</button>
+      <button class="pwa-install" onclick="installPWA()">安装</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ==================== Crypto Module ====================
 const WORD_LIST=["abandon","ability","able","about","above","absent","absorb","abstract","absurd","abuse","access","accident","account","accuse","achieve","acid","acoustic","acquire","across","act","action","actor","actress","actual","adapt","add","addict","address","adjust","admit","adult","advance","advice","aerobic","affair","afford","afraid","again","age","agent","agree","ahead","aim","air","airport","aisle","alarm","album","alcohol","alert","alien","all","alley","allow","almost","alone","alpha","already","also","alter","always","amateur","amazing","among","amount","amused","analyst","anchor","ancient","anger","angle","angry","animal","ankle","announce","annual","another","answer","antenna","antique","anxiety","any","apart","apology","appear","apple","approve","april","arch","arctic","area","arena","argue","arm","armed","armor","army","around","arrange","arrest","arrive","arrow","art","artefact","artist","artwork","ask","aspect","assault","asset","assist","assume","asthma","athlete","atom","attack","attend","attitude","attract","auction","audit","august","aunt","author","auto","autumn","average","avocado","avoid","awake","aware","awesome","awful","awkward","axis","baby","bachelor","bacon","badge","bag","balance","balcony","ball","bamboo","banana","banner","bar","barely","bargain","barrel","base","basic","basket","battle","beach","bean","beauty","because","become","beef","before","begin","behave","behind","believe","below","belt","bench","benefit","best","betray","better","between","beyond","bicycle","bid","bike","bind","biology","bird","birth","bitter","black","blade","blame","blanket","blast","bleak","bless","blind","blood","blossom","blow","blue","blur","blush","board","boat","body","boil","bomb","bone","bonus","book","boost","border","boring","borrow","boss","bottom","bounce","box","boy","bracket","brain","brand","brass","brave","bread","breeze","brick","bridge","brief","bright","bring","brisk","broccoli","broken","bronze","broom","brother","brown","brush","bubble","buddy","budget","buffalo","build","bulb","bulk","bullet","bundle","bunny","burden","burger","burst","bus","business","busy","butter","buyer","buzz","cabbage","cabin","cable","cactus"];
@@ -412,13 +445,12 @@ const Store={
     // Handle friend request
     if(msg.type==='friend_request'){
       const sid=msg.senderId;
-      // Already a contact?
       const existing=this._data.contacts.find(x=>x.id===sid);
       if(existing&&existing.status==='accepted')return;
-      // Already have this request?
       if(this._data.friendRequests.find(r=>r.fromId===sid))return;
       this._data.friendRequests.push({fromId:sid,fromName:msg.senderName||'User_'+sid.slice(0,6),timestamp:msg.timestamp});
       this.save();
+      if(typeof showLocalNotification==='function')showLocalNotification('SecureChat',`${msg.senderName||'有人'}请求添加您为好友`);
       return;
     }
 
@@ -430,6 +462,7 @@ const Store={
         c.status='accepted';
         if(!this._data.conversations[sid])this._data.conversations[sid]={messages:[],unread:0};
         this.save();
+        if(typeof showLocalNotification==='function')showLocalNotification('SecureChat',`${c.displayName} 已同意您的好友请求`);
       }
       return;
     }
@@ -439,7 +472,6 @@ const Store={
     const contact=this._data.contacts.find(x=>x.id===senderId);
     if(!contact||contact.status!=='accepted')return;
     if(!this._data.conversations[senderId])this._data.conversations[senderId]={messages:[],unread:0};
-    // Deduplicate
     if(this._data.conversations[senderId].messages.find(m=>m.id===msg.id))return;
     this._data.conversations[senderId].messages.push({
       id:msg.id,senderId:msg.senderId,recipientId:msg.recipientId,
@@ -447,6 +479,7 @@ const Store={
     });
     this._data.conversations[senderId].unread=(this._data.conversations[senderId].unread||0)+1;
     this.save();
+    if(typeof showLocalNotification==='function')showLocalNotification(contact.displayName||'新消息','您收到一条加密消息');
   },
 
   async sendFriendRequest(id,dn){
@@ -564,7 +597,7 @@ function openFriendRequests(){renderFriendRequests();showPage('page-friend-reque
 function renderFriendRequests(){const body=document.getElementById('friend-requests-body');const reqs=Store.getPendingRequests();if(!reqs.length){body.innerHTML=`<div class="empty-state"><div class="icon">🤝</div><p>暂无好友请求</p></div>`;return}let h='';for(const r of reqs){const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];const ac=colors[Math.abs(hashCode(r.fromId))%colors.length];const t=formatTime(r.timestamp);h+=`<div class="contact-item" style="padding:12px 16px"><div class="avatar avatar-md" style="background:${ac}">${r.fromName[0]}</div><div class="cinfo" style="flex:1"><div class="cname">${esc(r.fromName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${r.fromId}</div><div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${t}</div></div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-small" style="padding:4px 12px;font-size:13px" onclick="doAcceptFriend('${r.fromId}','${esc(r.fromName)}')">同意</button><button class="btn btn-secondary btn-small" style="padding:4px 12px;font-size:13px" onclick="doRejectFriend('${r.fromId}')">拒绝</button></div></div>`}body.innerHTML=h}
 async function doAcceptFriend(id,name){await Store.acceptFriendRequest(id,name);renderFriendRequests();updateBadges()}
 function doRejectFriend(id){Store.rejectFriendRequest(id);renderFriendRequests();updateBadges()}
-function renderProfileTab(c){const u=Store.user;if(!u)return;c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
+function renderProfileTab(c){const u=Store.user;if(!u)return;const pushEnabled=localStorage.getItem('push_enabled')==='1';const notifPerm=typeof Notification!=='undefined'?Notification.permission:'default';const pushStatusText=pushEnabled?'已开启':(notifPerm==='denied'?'已被浏览器禁止':'未开启');const pushStatusColor=pushEnabled?'#2ECC71':(notifPerm==='denied'?'var(--red)':'var(--orange)');c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">通知</div><div class="settings-item" onclick="togglePushNotification()"><span class="si-icon">🔔</span><span class="si-label">消息推送通知</span><span class="si-value" style="color:${pushStatusColor}">${pushStatusText}</span><span class="si-arrow">›</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
 function viewMnemonic(){const m=Store.mnemonic;if(!m)return;const w=m.split(' ');document.getElementById('mnemonic-view-body').innerHTML=`<div class="step-icon">👁️‍🗨️</div><div class="step-title">您的助记词</div><div class="step-desc">请勿在公共场合展示</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyText('${m}',this)">📋 复制助记词</button>`;showPage('page-mnemonic-view')}
 function doLogout(){if(confirm('退出后需要助记词才能恢复账户。确认退出？')){Store.logout();pageStack=[];document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-welcome').classList.add('active')}}
 
@@ -624,6 +657,161 @@ function esc(s){const d=document.createElement('div');d.textContent=s;return d.i
 function formatTime(ts){const d=new Date(ts);const n=new Date();if(d.toDateString()===n.toDateString())return d.toTimeString().slice(0,5);const y=new Date(n);y.setDate(y.getDate()-1);if(d.toDateString()===y.toDateString())return'昨天';return`${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`}
 function formatTimeShort(ts){return new Date(ts).toTimeString().slice(0,5)}
 function copyText(t,b){navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='✅ 已复制';setTimeout(()=>b.textContent=o,2000)}})}
+
+// ==================== PWA: Service Worker + Install + Web Push ====================
+let deferredInstallPrompt=null;
+let swRegistration=null;
+let pushSubscribed=false;
+
+// Register service worker
+if('serviceWorker' in navigator){
+  window.addEventListener('load',async()=>{
+    try{
+      swRegistration=await navigator.serviceWorker.register('./sw.js');
+      console.log('[PWA] Service worker registered');
+      // Check push subscription status
+      if(swRegistration.pushManager){
+        const sub=await swRegistration.pushManager.getSubscription();
+        pushSubscribed=!!sub;
+      }
+    }catch(err){console.error('[PWA] SW registration failed',err)}
+  });
+}
+
+// PWA install prompt
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  deferredInstallPrompt=e;
+  // Show install banner if not dismissed recently
+  if(!localStorage.getItem('pwa_dismiss')){
+    document.getElementById('pwa-install-banner').style.display='block';
+  }
+});
+
+function installPWA(){
+  if(!deferredInstallPrompt)return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(r=>{
+    console.log('[PWA] Install result:',r.outcome);
+    deferredInstallPrompt=null;
+    document.getElementById('pwa-install-banner').style.display='none';
+  });
+}
+function dismissInstall(){
+  document.getElementById('pwa-install-banner').style.display='none';
+  localStorage.setItem('pwa_dismiss','1');
+}
+
+// Detect installed
+window.addEventListener('appinstalled',()=>{
+  console.log('[PWA] App installed');
+  document.getElementById('pwa-install-banner').style.display='none';
+  deferredInstallPrompt=null;
+});
+
+// ==================== Web Push via ntfy.sh ====================
+// ntfy.sh supports Web Push natively via its /subscribe endpoint
+// We subscribe the browser push to the ntfy topic for the user
+
+async function subscribePush(){
+  if(!Store.isLoggedIn||!swRegistration?.pushManager)return false;
+  try{
+    // Request notification permission
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){console.log('[Push] Permission denied');return false}
+
+    // Subscribe to ntfy.sh web push for our topic
+    const topic='securechat_'+Store.user.id;
+    const ntfySubUrl=RELAY+'/'+topic+'/json?poll=1';
+
+    // Use browser Push API with ntfy.sh as the push server
+    // ntfy supports adding web push subscriptions directly
+    let sub=await swRegistration.pushManager.getSubscription();
+    if(!sub){
+      // Generate VAPID-less subscription (ntfy uses its own server key)
+      // First fetch the ntfy server's VAPID key
+      try{
+        const configResp=await fetch(RELAY+'/v1/webpush/config');
+        const config=await configResp.json();
+        if(config.public_key){
+          sub=await swRegistration.pushManager.subscribe({
+            userVisibleOnly:true,
+            applicationServerKey:urlBase64ToUint8Array(config.public_key)
+          });
+        }
+      }catch(err){
+        console.log('[Push] ntfy VAPID fetch failed, using local notifications',err);
+        // Fallback: use Notification API directly from SSE events
+        pushSubscribed=true;
+        localStorage.setItem('push_enabled','1');
+        return true;
+      }
+    }
+
+    if(sub){
+      // Register this push subscription with ntfy.sh for our topic
+      try{
+        await fetch(RELAY+'/'+topic+'/webpush',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(sub.toJSON())
+        });
+        console.log('[Push] Subscribed to ntfy web push for topic',topic);
+      }catch(err){console.log('[Push] ntfy webpush registration failed',err)}
+      pushSubscribed=true;
+      localStorage.setItem('push_enabled','1');
+      return true;
+    }
+
+    // Fallback: local notification from SSE
+    pushSubscribed=true;
+    localStorage.setItem('push_enabled','1');
+    return true;
+  }catch(err){console.error('[Push] Subscribe error',err);return false}
+}
+
+function urlBase64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(base64);
+  const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+  return arr;
+}
+
+// Show local notification (fallback when Web Push API unavailable or as supplement from SSE)
+function showLocalNotification(title,body){
+  if(Notification.permission!=='granted')return;
+  if(document.visibilityState==='visible')return; // Don't notify if app is in foreground
+  try{
+    if(swRegistration){
+      swRegistration.showNotification(title,{
+        body:body,
+        icon:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="40" fill="%234A90D9"/><path d="M96 40c-22.1 0-40 17.9-40 40v16H48c-4.4 0-8 3.6-8 8v48c0 4.4 3.6 8 8 8h96c4.4 0 8-3.6 8-8v-48c0-4.4-3.6-8-8-8h-8V80c0-22.1-17.9-40-40-40zm0 16c13.3 0 24 10.7 24 24v16H72V80c0-13.3 10.7-24 24-24zm0 64c6.6 0 12 5.4 12 12s-5.4 12-12 12-12-5.4-12-12 5.4-12 12-12z" fill="white"/></svg>',
+        tag:'securechat-msg',
+        renotify:true
+      });
+    }else{
+      new Notification(title,{body:body,tag:'securechat-msg'});
+    }
+  }catch(err){console.log('[Push] Local notification error',err)}
+}
+
+async function togglePushNotification(){
+  if(typeof Notification==='undefined'){alert('您的浏览器不支持通知功能');return}
+  if(Notification.permission==='denied'){alert('通知权限已被浏览器禁止，请在浏览器设置中允许通知');return}
+  if(localStorage.getItem('push_enabled')==='1'){
+    localStorage.removeItem('push_enabled');
+    pushSubscribed=false;
+    // Unsubscribe push if exists
+    if(swRegistration?.pushManager){try{const s=await swRegistration.pushManager.getSubscription();if(s)await s.unsubscribe()}catch{}}
+    refreshCurrentView();
+    return;
+  }
+  const ok=await subscribePush();
+  if(ok){refreshCurrentView()}
+  else{alert('开启推送通知失败，请确保浏览器允许通知权限')}
+}
 </script>
 </body>
 </html>
