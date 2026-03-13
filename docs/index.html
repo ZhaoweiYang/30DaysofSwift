@@ -281,7 +281,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     <div class="body">
       <div class="step-icon">🔑</div>
       <div class="step-title">输入加密密钥</div>
-      <div class="step-desc" id="key-input-desc">输入对方分享给您的加密密钥</div>
+      <div class="step-desc" id="key-input-desc">输入对方的发送密钥，用于解密对方发来的消息</div>
       <div class="input-group"><textarea id="key-input-text" placeholder="粘贴 Base64 密钥..." style="font-size:13px"></textarea><div id="key-input-error" class="error" style="display:none"></div></div>
       <button class="copy-btn" onclick="pasteKeyInput()">📋 从剪贴板粘贴</button>
     </div>
@@ -296,8 +296,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <div class="step-title">添加联系人</div>
       <div class="input-group"><label>用户ID</label><input id="add-contact-id" placeholder="输入对方的用户ID"></div>
       <div class="input-group"><label>备注名</label><input id="add-contact-name" placeholder="给对方取个名字"></div>
-      <div class="toggle-row"><label>自动生成新密钥</label><label class="switch"><input type="checkbox" id="add-contact-auto-key" checked onchange="toggleManualKey()"><span class="slider"></span></label></div>
-      <div class="input-group" id="add-contact-key-group" style="display:none"><label>共享密钥（Base64）</label><textarea id="add-contact-key" placeholder="粘贴密钥..." style="height:60px;font-size:13px"></textarea></div>
+      <div class="toggle-row"><label>自动生成发送密钥</label><label class="switch"><input type="checkbox" id="add-contact-auto-key" checked onchange="toggleManualKey()"><span class="slider"></span></label></div>
+      <div class="input-group" id="add-contact-key-group" style="display:none"><label>我的发送密钥（Base64）</label><textarea id="add-contact-key" placeholder="粘贴密钥..." style="height:60px;font-size:13px"></textarea></div>
     </div>
     <div class="bottom-actions"><button class="btn btn-primary" onclick="doAddContact()">添加</button></div>
   </div>
@@ -353,7 +353,7 @@ const Store={
   load(){
     let sid=this._getSession();
     if(!sid){try{const r=indexedDB.open('sc_db',1);r.onsuccess=e=>{try{const tx=e.target.result.transaction('kv','readonly');const g=tx.objectStore('kv').get('session');g.onsuccess=()=>{if(g.result&&!this.isLoggedIn){const d=localStorage.getItem('sc_'+g.result);if(d)try{this._data=JSON.parse(d);this._setSession(g.result);this._notify();this._subscribe();showPage('page-main');switchTab('chats')}catch{}}}}catch{}}}catch{}}
-    if(sid){const r=localStorage.getItem('sc_'+sid);if(r)try{this._data=JSON.parse(r);this._setSession(sid)}catch{}}
+    if(sid){const r=localStorage.getItem('sc_'+sid);if(r)try{this._data=JSON.parse(r);this._migrateKeys();this._setSession(sid)}catch{}}
   },
   clear(){
     const k=this._storageKey();
@@ -409,7 +409,7 @@ const Store={
       const dn=msg.senderName||'User_'+senderId.slice(0,6);
       const ac=colors[Math.abs(hashCode(senderId))%colors.length];
       if(!this._data.contacts.find(x=>x.id===senderId)){
-        this._data.contacts.push({id:senderId,displayName:dn,avatarColor:ac,conversationKeyB64:null,addedAt:Date.now()});
+        this._data.contacts.push({id:senderId,displayName:dn,avatarColor:ac,myKeyB64:null,theirKeyB64:null,addedAt:Date.now()});
       }
       this._data.conversations[senderId]={messages:[],unread:0};
     }
@@ -423,13 +423,15 @@ const Store={
     this.save();
   },
 
-  async addContact(id,dn,kb){if(this._data.contacts.find(c=>c.id===id))return;const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],conversationKeyB64:kb||null,addedAt:Date.now()});this._data.conversations[id]={messages:[],unread:0};this.save()},
-  updateContactKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.conversationKeyB64=kb;this.save()},
+  async addContact(id,dn,mk){if(this._data.contacts.find(c=>c.id===id))return;const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],myKeyB64:mk||null,theirKeyB64:null,addedAt:Date.now()});this._data.conversations[id]={messages:[],unread:0};this.save()},
+  updateMyKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.myKeyB64=kb;this.save()},
+  updateTheirKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.theirKeyB64=kb;this.save()},
+  _migrateKeys(){for(const c of this._data.contacts){if(c.conversationKeyB64&&!c.myKeyB64){c.myKeyB64=c.conversationKeyB64;delete c.conversationKeyB64}}},
   getContact(id){return this._data.contacts.find(c=>c.id===id)},
 
   async sendMessage(ci,pt){
-    const c=this.getContact(ci);if(!c?.conversationKeyB64||!this._data.user)return false;
-    const k=await CryptoUtils.importKey(c.conversationKeyB64);if(!k)return false;
+    const c=this.getContact(ci);if(!c?.myKeyB64||!this._data.user)return false;
+    const k=await CryptoUtils.importKey(c.myKeyB64);if(!k)return false;
     const e=await CryptoUtils.encrypt(pt,k);
     const msg={id:uid(),senderId:this._data.user.id,recipientId:ci,encrypted:e,timestamp:Date.now(),isRead:true};
     this._data.conversations[ci].messages.push(msg);
@@ -446,12 +448,14 @@ const Store={
 
   async decryptMessage(ci,m){
     const c=this.getContact(ci);
-    if(!c?.conversationKeyB64){
+    const isMe=m.senderId===this._data.user?.id;
+    const keyB64=isMe?c?.myKeyB64:c?.theirKeyB64;
+    if(!keyB64){
       const ct=m.encrypted||'';
       if(ct.length>50)return ct.slice(0,50)+'...';
       return ct||'[加密消息]';
     }
-    const k=await CryptoUtils.importKey(c.conversationKeyB64);
+    const k=await CryptoUtils.importKey(keyB64);
     if(!k)return m.encrypted?m.encrypted.slice(0,50)+'...':'[密钥无效]';
     const result=await CryptoUtils.decrypt(m.encrypted,k);
     if(!result)return m.encrypted?m.encrypted.slice(0,50)+'...':'[解密失败]';
@@ -493,7 +497,7 @@ function updateBadges(){const t=Store.getTotalUnread();const b=document.getEleme
 
 function renderChatsTab(container){const contacts=Store.contacts.slice().sort((a,b)=>{const la=Store.getLastMessage(a.id)?.timestamp||a.addedAt;const lb=Store.getLastMessage(b.id)?.timestamp||b.addedAt;return lb-la});let h=`<div class="header" style="position:relative"><div style="width:40px">${Store.user?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor};cursor:pointer" onclick="switchTab('profile')">${Store.user.displayName[0]}</div>`:''}</div><h2>消息</h2><div class="header-right"><button class="back-btn" style="font-size:22px;margin:0" onclick="showPage('page-add-contact')">➕</button></div></div><div class="search-bar"><div class="search-bar-inner">🔍 搜索</div></div>`;if(!contacts.length){h+=`<div class="empty-state"><div class="icon">💬</div><p>暂无会话</p><p style="font-size:13px">添加联系人开始聊天</p></div>`}else{h+=`<div class="conv-list">`;for(const c of contacts){const lm=Store.getLastMessage(c.id);const u=Store.conversations[c.id]?.unread||0;const t=lm?formatTime(lm.timestamp):'';h+=`<div class="conv-item" onclick="openChat('${c.id}')"><div class="avatar avatar-md" style="background:${c.avatarColor}">${c.displayName[0]}</div><div class="info"><div class="top"><span class="name">${esc(c.displayName)}</span><span class="time">${t}</span></div><div class="top" style="margin-top:1px"><span style="font-size:11px;color:var(--text-secondary);font-family:monospace">ID: ${c.id}</span></div><div class="bottom"><span class="preview"><span class="lock">🔒</span> <span id="conv-preview-${c.id}">${lm?'...':'[加密会话已建立]'}</span></span>${u>0?`<span class="unread-badge">${u}</span>`:''}</div></div></div>`}h+=`</div>`}container.innerHTML=h;for(const c of contacts){const lm=Store.getLastMessage(c.id);if(lm)Store.decryptMessage(c.id,lm).then(t=>{const el=document.getElementById(`conv-preview-${c.id}`);if(el)el.textContent=t.length>20?t.slice(0,20)+'...':t})}}
 
-function renderContactsTab(c){let h=`<div class="header"><div style="width:40px"></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div class="section-title">联系人 (${Store.contacts.length})</div><div style="flex:1;overflow-y:auto">`;for(const x of Store.contacts){const hk=!!x.conversationKeyB64;h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot ${hk?'on':'off'}"></span>${hk?'加密已建立':'待建立加密'}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
+function renderContactsTab(c){let h=`<div class="header"><div style="width:40px"></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div class="section-title">联系人 (${Store.contacts.length})</div><div style="flex:1;overflow-y:auto">`;for(const x of Store.contacts){const hm=!!x.myKeyB64;const ht=!!x.theirKeyB64;const st=(hm&&ht)?'双向加密已建立':hm?'已生成发送密钥·待导入对方密钥':ht?'已导入对方密钥·待生成发送密钥':'待建立加密';const dot=(hm&&ht)?'on':'off';h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot ${dot}"></span>${st}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
 
 function renderProfileTab(c){const u=Store.user;if(!u)return;c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
 function viewMnemonic(){const m=Store.mnemonic;if(!m)return;const w=m.split(' ');document.getElementById('mnemonic-view-body').innerHTML=`<div class="step-icon">👁️‍🗨️</div><div class="step-title">您的助记词</div><div class="step-desc">请勿在公共场合展示</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyText('${m}',this)">📋 复制助记词</button>`;showPage('page-mnemonic-view')}
@@ -502,31 +506,35 @@ function doLogout(){if(confirm('退出后需要助记词才能恢复账户。确
 function openChat(ci){
   const c=Store.getContact(ci);if(!c)return;
   currentChatContact=ci;
-  const hk=!!c.conversationKeyB64;
-  // Show contact name + ID in header
+  const hasMyKey=!!c.myKeyB64;const hasTheirKey=!!c.theirKeyB64;
   document.getElementById('chat-title').innerHTML=esc(c.displayName)+'<div style="font-size:11px;color:var(--text-secondary);font-family:monospace;font-weight:400">ID: '+ci+'</div>';
-  // Key banner: show when no key, with input button
   const banner=document.getElementById('chat-key-banner');
-  if(hk){
-    banner.style.display='none';
-  }else{
+  if(!hasMyKey){
     banner.style.display='flex';
-    banner.innerHTML='🔒 未输入解密密钥，消息将显示为密文 <span class="action" onclick="showPage(\'page-key-input\')">输入密钥</span>';
+    banner.innerHTML='🔒 未生成发送密钥，无法发送消息 <span class="action" onclick="showKeyInfo()">设置密钥</span>';
+  }else if(!hasTheirKey){
+    banner.style.display='flex';
+    banner.innerHTML='🔒 未输入对方密钥，对方消息显示为密文 <span class="action" onclick="showPage(\'page-key-input\')">输入密钥</span>';
+  }else{
+    banner.style.display='none';
   }
-  document.getElementById('chat-lock-btn').textContent=hk?'🔒':'🔓';
-  // Allow sending if sender has a key; don't disable send button
-  document.getElementById('chat-send-btn').disabled=!hk;
+  document.getElementById('chat-lock-btn').textContent=(hasMyKey&&hasTheirKey)?'🔒':'🔓';
+  document.getElementById('chat-send-btn').disabled=!hasMyKey;
   Store.markRead(ci);showPage('page-chat');renderMessages();
   clearInterval(chatRefreshTimer);
   chatRefreshTimer=setInterval(()=>{
     if(currentChatContact===ci){
       // Re-read contact data in case key was updated
       const cc=Store.getContact(ci);
-      const hasKey=!!cc?.conversationKeyB64;
+      const mk=!!cc?.myKeyB64;const tk=!!cc?.theirKeyB64;
       const bannerEl=document.getElementById('chat-key-banner');
-      if(hasKey&&bannerEl.style.display!=='none'){
+      if(mk&&tk&&bannerEl.style.display!=='none'){
         bannerEl.style.display='none';
         document.getElementById('chat-lock-btn').textContent='🔒';
+        document.getElementById('chat-send-btn').disabled=false;
+      }else if(mk&&!tk){
+        bannerEl.style.display='flex';
+        bannerEl.innerHTML='🔒 未输入对方密钥，对方消息显示为密文 <span class="action" onclick="showPage(\'page-key-input\')">输入密钥</span>';
         document.getElementById('chat-send-btn').disabled=false;
       }
       renderMessages();
@@ -534,16 +542,16 @@ function openChat(ci){
   },800);
 }
 function closeChat(){clearInterval(chatRefreshTimer);currentChatContact=null;closePage('page-chat');if(currentTab==='chats'){renderChatsTab(document.getElementById('tab-content'))}}
-async function renderMessages(){const ci=currentChatContact;if(!ci)return;const cv=Store.conversations[ci];if(!cv)return;const ct=document.getElementById('chat-messages');const ui=Store.user?.id;const co=Store.getContact(ci);const hk=!!co?.conversationKeyB64;Store.markRead(ci);let h='';for(const m of cv.messages){const im=m.senderId===ui;const t=await Store.decryptMessage(ci,m);const tm=formatTimeShort(m.timestamp);const av=im?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor}">${Store.user.displayName[0]}</div>`:`<div class="avatar avatar-sm" style="background:${co.avatarColor}">${co.displayName[0]}</div>`;const isCiphertext=!hk;const bubbleStyle=(!im&&isCiphertext)?'style="font-family:monospace;font-size:12px;word-break:break-all;color:#666"':'';h+=`<div class="msg-row ${im?'mine':''}">${av}<div><div class="msg-bubble ${im?'mine':'other'}" ${bubbleStyle} onclick="toggleEncrypted(this,'${m.encrypted.replace(/'/g,"\\'").replace(/\n/g,'')}')"><span class="decrypted-text">${esc(t)}</span></div><div class="msg-meta msg-time">${tm}${(!im&&isCiphertext)?' 🔒 密文':''}${(im&&hk)?' ✓':''}</div></div></div>`}if(!hk&&cv.messages.length>0){h+=`<div style="text-align:center;padding:20px 16px"><div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">🔒 以上消息为加密密文<br>输入对方分享的密钥即可解密</div><button class="btn btn-primary btn-small" onclick="showPage('page-key-input')" style="margin:0 auto;display:block">🔑 输入解密密钥</button></div>`}ct.innerHTML=h;ct.scrollTop=ct.scrollHeight}
+async function renderMessages(){const ci=currentChatContact;if(!ci)return;const cv=Store.conversations[ci];if(!cv)return;const ct=document.getElementById('chat-messages');const ui=Store.user?.id;const co=Store.getContact(ci);const hasMyKey=!!co?.myKeyB64;const hasTheirKey=!!co?.theirKeyB64;Store.markRead(ci);let h='';for(const m of cv.messages){const im=m.senderId===ui;const t=await Store.decryptMessage(ci,m);const tm=formatTimeShort(m.timestamp);const av=im?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor}">${Store.user.displayName[0]}</div>`:`<div class="avatar avatar-sm" style="background:${co.avatarColor}">${co.displayName[0]}</div>`;const noKey=im?!hasMyKey:!hasTheirKey;const bubbleStyle=noKey?'style="font-family:monospace;font-size:12px;word-break:break-all;color:#666"':'';h+=`<div class="msg-row ${im?'mine':''}">${av}<div><div class="msg-bubble ${im?'mine':'other'}" ${bubbleStyle} onclick="toggleEncrypted(this,'${m.encrypted.replace(/'/g,"\\'").replace(/\n/g,'')}')"><span class="decrypted-text">${esc(t)}</span></div><div class="msg-meta msg-time">${tm}${noKey?' 🔒 密文':''}${(!noKey&&im)?' ✓':''}</div></div></div>`}if(!hasTheirKey&&cv.messages.some(m=>m.senderId!==ui)){h+=`<div style="text-align:center;padding:20px 16px"><div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">🔒 对方消息为加密密文<br>输入对方的发送密钥即可解密</div><button class="btn btn-primary btn-small" onclick="showPage('page-key-input')" style="margin:0 auto;display:block">🔑 输入对方密钥</button></div>`}ct.innerHTML=h;ct.scrollTop=ct.scrollHeight}
 function toggleEncrypted(el,enc){const d=el.querySelector('.decrypted-text');const e=el.querySelector('.encrypted-text');if(e){e.remove();d.style.display=''}else{d.style.display='none';const s=document.createElement('span');s.className='encrypted-text';s.style.cssText='font-size:11px;color:var(--text-secondary);font-family:monospace;word-break:break-all';s.textContent='🔒 '+enc;el.appendChild(s)}}
 async function sendMsg(){const i=document.getElementById('chat-input');const t=i.value.trim();if(!t||!currentChatContact)return;i.value='';await Store.sendMessage(currentChatContact,t);renderMessages()}
 
-async function showKeyInfo(){const ci=currentChatContact;const co=Store.getContact(ci);if(!co)return;const body=document.getElementById('key-info-body');const hk=!!co.conversationKeyB64;if(hk){const k=await CryptoUtils.importKey(co.conversationKeyB64);const fp=k?await CryptoUtils.keyFingerprint(k):'N/A';body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:#2ECC71;font-size:36px">🔒</div><div class="step-title" style="margin-top:16px">加密信息</div><div style="width:100%;margin-top:16px"><div class="info-card"><span class="label">联系人ID</span><span class="value">${ci}</span></div><div class="info-card"><span class="label">加密状态</span><span class="value green">已建立</span></div><div class="info-card"><span class="label">加密算法</span><span class="value">AES-256-GCM</span></div><div class="info-card"><span class="label">密钥指纹</span><span class="value">${fp}</span></div></div><div style="margin-top:24px;text-align:center"><div class="step-desc">分享密钥给 ${esc(co.displayName)}<br>对方输入后即可解密您发送的消息</div><button class="btn btn-primary btn-small" onclick="copyText('${co.conversationKeyB64}',this)" style="margin:0 auto">📋 复制密钥</button></div><div class="flow-box"><div class="flow-title">加密流程说明</div><div class="flow-text">发送方用密钥在本地加密消息 →<br>平台转发加密数据 →<br>接收方用相同密钥在本地解密</div></div>`}else{body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:var(--orange);font-size:36px">🔓</div><div class="step-title" style="margin-top:16px">加密信息</div><div class="step-desc">尚未建立加密连接<br>您需要获取对方的密钥或生成新密钥</div><button class="btn btn-primary btn-small" onclick="generateKeyForContact('${ci}')">🔑 生成新密钥</button><div style="height:16px"></div><button class="btn btn-secondary btn-small" onclick="closePage('page-key-info');showPage('page-key-input')">📥 输入对方密钥</button>`}showPage('page-key-info')}
-async function generateKeyForContact(ci){const k=await CryptoUtils.generateConversationKey();Store.updateContactKey(ci,await CryptoUtils.exportKey(k));if(currentChatContact===ci){document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒';document.getElementById('chat-send-btn').disabled=false}closePage('page-key-info');showKeyInfo()}
+async function showKeyInfo(){const ci=currentChatContact;const co=Store.getContact(ci);if(!co)return;const body=document.getElementById('key-info-body');const hm=!!co.myKeyB64;const ht=!!co.theirKeyB64;let h=`<div class="avatar avatar-lg avatar-round" style="background:${(hm&&ht)?'#2ECC71':'var(--orange)'};font-size:36px">${(hm&&ht)?'🔒':'🔓'}</div><div class="step-title" style="margin-top:16px">加密信息</div><div style="width:100%;margin-top:16px"><div class="info-card"><span class="label">联系人ID</span><span class="value">${ci}</span></div><div class="info-card"><span class="label">加密算法</span><span class="value">AES-256-GCM</span></div></div>`;h+=`<div style="width:100%;margin-top:20px"><div class="step-title" style="font-size:15px">我的发送密钥</div><div class="step-desc" style="font-size:12px">用于加密我发出的消息，需分享给对方解密</div>`;if(hm){h+=`<div class="info-card"><span class="label">状态</span><span class="value green">已生成</span></div><button class="btn btn-primary btn-small" onclick="copyText('${co.myKeyB64}',this)" style="margin:8px auto;display:block">📋 复制我的密钥（发给对方）</button><button class="btn btn-secondary btn-small" onclick="generateKeyForContact('${ci}')" style="margin:4px auto;display:block">🔄 重新生成</button>`}else{h+=`<div class="info-card"><span class="label">状态</span><span class="value" style="color:var(--orange)">未生成</span></div><button class="btn btn-primary btn-small" onclick="generateKeyForContact('${ci}')" style="margin:8px auto;display:block">🔑 生成发送密钥</button>`}h+=`</div>`;h+=`<div style="width:100%;margin-top:20px"><div class="step-title" style="font-size:15px">对方的发送密钥</div><div class="step-desc" style="font-size:12px">用于解密对方发来的消息，需对方分享给您</div>`;if(ht){h+=`<div class="info-card"><span class="label">状态</span><span class="value green">已导入</span></div><button class="btn btn-secondary btn-small" onclick="closePage('page-key-info');showPage('page-key-input')" style="margin:8px auto;display:block">🔄 修改对方密钥</button>`}else{h+=`<div class="info-card"><span class="label">状态</span><span class="value" style="color:var(--orange)">未导入</span></div><button class="btn btn-primary btn-small" onclick="closePage('page-key-info');showPage('page-key-input')" style="margin:8px auto;display:block">📥 输入对方密钥</button>`}h+=`</div>`;h+=`<div class="flow-box"><div class="flow-title">加密流程说明</div><div class="flow-text">A 用自己的密钥加密消息 → 平台转发密文 → B 输入 A 的密钥解密<br>B 用自己的密钥加密消息 → 平台转发密文 → A 输入 B 的密钥解密<br><br>双方密钥独立，互不相同</div></div>`;body.innerHTML=h;showPage('page-key-info')}
+async function generateKeyForContact(ci){const k=await CryptoUtils.generateConversationKey();Store.updateMyKey(ci,await CryptoUtils.exportKey(k));if(currentChatContact===ci){document.getElementById('chat-send-btn').disabled=false;const co=Store.getContact(ci);if(co?.theirKeyB64){document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒'}else{document.getElementById('chat-key-banner').style.display='flex';document.getElementById('chat-key-banner').innerHTML='🔒 未输入对方密钥，对方消息显示为密文 <span class="action" onclick="showPage(\'page-key-input\')">输入密钥</span>'}}closePage('page-key-info');showKeyInfo()}
 async function pasteKeyInput(){try{const t=await navigator.clipboard.readText();document.getElementById('key-input-text').value=t.trim()}catch{}}
-async function doImportKey(){const kb=document.getElementById('key-input-text').value.trim();const k=await CryptoUtils.importKey(kb);if(!k){document.getElementById('key-input-error').style.display='block';document.getElementById('key-input-error').textContent='密钥格式无效，请检查后重试';return}document.getElementById('key-input-error').style.display='none';Store.updateContactKey(currentChatContact,kb);document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒';document.getElementById('chat-send-btn').disabled=false;document.getElementById('key-input-text').value='';closePage('page-key-input');renderMessages()}
+async function doImportKey(){const kb=document.getElementById('key-input-text').value.trim();const k=await CryptoUtils.importKey(kb);if(!k){document.getElementById('key-input-error').style.display='block';document.getElementById('key-input-error').textContent='密钥格式无效，请检查后重试';return}document.getElementById('key-input-error').style.display='none';Store.updateTheirKey(currentChatContact,kb);const co=Store.getContact(currentChatContact);if(co?.myKeyB64){document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒'}document.getElementById('key-input-text').value='';closePage('page-key-input');renderMessages()}
 function toggleManualKey(){document.getElementById('add-contact-key-group').style.display=document.getElementById('add-contact-auto-key').checked?'none':'block'}
-async function doAddContact(){const id=document.getElementById('add-contact-id').value.trim();const nm=document.getElementById('add-contact-name').value.trim();if(!id||!nm)return alert('请填写用户ID和备注名');let kb=null;if(document.getElementById('add-contact-auto-key').checked){const k=await CryptoUtils.generateConversationKey();kb=await CryptoUtils.exportKey(k)}else{kb=document.getElementById('add-contact-key').value.trim()||null}await Store.addContact(id,nm,kb);document.getElementById('add-contact-id').value='';document.getElementById('add-contact-name').value='';document.getElementById('add-contact-key').value='';document.getElementById('add-contact-auto-key').checked=true;toggleManualKey();closePage('page-add-contact')}
+async function doAddContact(){const id=document.getElementById('add-contact-id').value.trim();const nm=document.getElementById('add-contact-name').value.trim();if(!id||!nm)return alert('请填写用户ID和备注名');let mk=null;if(document.getElementById('add-contact-auto-key').checked){const k=await CryptoUtils.generateConversationKey();mk=await CryptoUtils.exportKey(k)}else{mk=document.getElementById('add-contact-key').value.trim()||null}await Store.addContact(id,nm,mk);document.getElementById('add-contact-id').value='';document.getElementById('add-contact-name').value='';document.getElementById('add-contact-key').value='';document.getElementById('add-contact-auto-key').checked=true;toggleManualKey();closePage('page-add-contact')}
 
 function refreshCurrentView(){if(currentChatContact)renderMessages();const c=document.getElementById('tab-content');if(c&&document.getElementById('page-main').classList.contains('active'))switchTab(currentTab)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
