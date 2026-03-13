@@ -255,7 +255,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     <div id="tab-content" style="flex:1; overflow:hidden; position:relative;"></div>
     <div class="tab-bar">
       <div class="tab active" data-tab="chats" onclick="switchTab('chats')"><div class="icon">💬</div><div class="label">消息</div><div class="badge" id="tab-badge-chats" style="display:none"></div></div>
-      <div class="tab" data-tab="contacts" onclick="switchTab('contacts')"><div class="icon">👥</div><div class="label">通讯录</div></div>
+      <div class="tab" data-tab="contacts" onclick="switchTab('contacts')"><div class="icon">👥</div><div class="label">通讯录</div><div class="badge" id="tab-badge-contacts" style="display:none"></div></div>
 
       <div class="tab" data-tab="profile" onclick="switchTab('profile')"><div class="icon">👤</div><div class="label">我</div></div>
     </div>
@@ -293,13 +293,18 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     <div class="header"><button class="back-btn" onclick="closePage('page-add-contact')">&larr;</button><h2>添加联系人</h2><div class="header-right"></div></div>
     <div class="body">
       <div class="step-icon">👤</div>
-      <div class="step-title">添加联系人</div>
+      <div class="step-title">添加好友</div>
+      <div class="step-desc">发送好友请求，对方同意后即可开始聊天</div>
       <div class="input-group"><label>用户ID</label><input id="add-contact-id" placeholder="输入对方的用户ID"></div>
       <div class="input-group"><label>备注名</label><input id="add-contact-name" placeholder="给对方取个名字"></div>
-      <div class="toggle-row"><label>自动生成发送密钥</label><label class="switch"><input type="checkbox" id="add-contact-auto-key" checked onchange="toggleManualKey()"><span class="slider"></span></label></div>
-      <div class="input-group" id="add-contact-key-group" style="display:none"><label>我的发送密钥（Base64）</label><textarea id="add-contact-key" placeholder="粘贴密钥..." style="height:60px;font-size:13px"></textarea></div>
     </div>
-    <div class="bottom-actions"><button class="btn btn-primary" onclick="doAddContact()">添加</button></div>
+    <div class="bottom-actions"><button class="btn btn-primary" onclick="doAddContact()">发送好友请求</button></div>
+  </div>
+
+  <!-- Friend Requests Page -->
+  <div id="page-friend-requests" class="page panel">
+    <div class="header"><button class="back-btn" onclick="closePage('page-friend-requests')">&larr;</button><h2>新的朋友</h2><div class="header-right"></div></div>
+    <div id="friend-requests-body" style="flex:1;overflow-y:auto"></div>
   </div>
 
   <!-- Mnemonic View Page -->
@@ -330,7 +335,7 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function hashCode(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return h}
 const RELAY='https://ntfy.sh';
 const Store={
-  _listeners:[],_data:{user:null,mnemonic:null,contacts:[],conversations:{}},
+  _listeners:[],_data:{user:null,mnemonic:null,contacts:[],conversations:{},friendRequests:[]},
   _sse:null,
   _storageKey(){return this._data.user?'sc_'+this._data.user.id:'sc_tmp'},
   _setSession(id){
@@ -357,7 +362,7 @@ const Store={
   },
   clear(){
     const k=this._storageKey();
-    this._data={user:null,mnemonic:null,contacts:[],conversations:{}};
+    this._data={user:null,mnemonic:null,contacts:[],conversations:{},friendRequests:[]};
     localStorage.removeItem(k);this._clearSession();
     this._notify();
   },
@@ -402,17 +407,38 @@ const Store={
   _onRelayMessage(msg){
     if(!this._data.user)return;
     if(msg.recipientId!==this._data.user.id)return;
-    const senderId=msg.senderId;
-    // Auto-create contact if not known
-    if(!this._data.conversations[senderId]){
-      const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];
-      const dn=msg.senderName||'User_'+senderId.slice(0,6);
-      const ac=colors[Math.abs(hashCode(senderId))%colors.length];
-      if(!this._data.contacts.find(x=>x.id===senderId)){
-        this._data.contacts.push({id:senderId,displayName:dn,avatarColor:ac,myKeyB64:null,theirKeyB64:null,addedAt:Date.now()});
-      }
-      this._data.conversations[senderId]={messages:[],unread:0};
+    if(!this._data.friendRequests)this._data.friendRequests=[];
+
+    // Handle friend request
+    if(msg.type==='friend_request'){
+      const sid=msg.senderId;
+      // Already a contact?
+      const existing=this._data.contacts.find(x=>x.id===sid);
+      if(existing&&existing.status==='accepted')return;
+      // Already have this request?
+      if(this._data.friendRequests.find(r=>r.fromId===sid))return;
+      this._data.friendRequests.push({fromId:sid,fromName:msg.senderName||'User_'+sid.slice(0,6),timestamp:msg.timestamp});
+      this.save();
+      return;
     }
+
+    // Handle friend accept
+    if(msg.type==='friend_accept'){
+      const sid=msg.senderId;
+      const c=this._data.contacts.find(x=>x.id===sid);
+      if(c&&c.status==='pending_out'){
+        c.status='accepted';
+        if(!this._data.conversations[sid])this._data.conversations[sid]={messages:[],unread:0};
+        this.save();
+      }
+      return;
+    }
+
+    // Regular chat message — only accept from accepted contacts
+    const senderId=msg.senderId;
+    const contact=this._data.contacts.find(x=>x.id===senderId);
+    if(!contact||contact.status!=='accepted')return;
+    if(!this._data.conversations[senderId])this._data.conversations[senderId]={messages:[],unread:0};
     // Deduplicate
     if(this._data.conversations[senderId].messages.find(m=>m.id===msg.id))return;
     this._data.conversations[senderId].messages.push({
@@ -423,10 +449,45 @@ const Store={
     this.save();
   },
 
-  async addContact(id,dn,mk){if(this._data.contacts.find(c=>c.id===id))return;const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],myKeyB64:mk||null,theirKeyB64:null,addedAt:Date.now()});this._data.conversations[id]={messages:[],unread:0};this.save()},
+  async sendFriendRequest(id,dn){
+    if(this._data.contacts.find(c=>c.id===id))return;
+    const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];
+    this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],myKeyB64:null,theirKeyB64:null,status:'pending_out',addedAt:Date.now()});
+    this.save();
+    // Send friend request via relay
+    try{
+      const topic='securechat_'+id;
+      const payload={id:uid(),type:'friend_request',senderId:this._data.user.id,recipientId:id,senderName:this._data.user.displayName,timestamp:Date.now()};
+      await fetch(RELAY+'/'+topic,{method:'POST',body:JSON.stringify(payload)});
+    }catch(err){console.error('[SecureChat] friend request send error',err)}
+  },
+  async acceptFriendRequest(fromId,displayName){
+    if(!this._data.friendRequests)this._data.friendRequests=[];
+    this._data.friendRequests=this._data.friendRequests.filter(r=>r.fromId!==fromId);
+    let c=this._data.contacts.find(x=>x.id===fromId);
+    const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];
+    if(!c){
+      c={id:fromId,displayName:displayName,avatarColor:colors[Math.abs(hashCode(fromId))%colors.length],myKeyB64:null,theirKeyB64:null,status:'accepted',addedAt:Date.now()};
+      this._data.contacts.push(c);
+    }else{c.status='accepted';if(displayName)c.displayName=displayName}
+    if(!this._data.conversations[fromId])this._data.conversations[fromId]={messages:[],unread:0};
+    this.save();
+    // Notify sender that request was accepted
+    try{
+      const topic='securechat_'+fromId;
+      const payload={id:uid(),type:'friend_accept',senderId:this._data.user.id,recipientId:fromId,senderName:this._data.user.displayName,timestamp:Date.now()};
+      await fetch(RELAY+'/'+topic,{method:'POST',body:JSON.stringify(payload)});
+    }catch(err){console.error('[SecureChat] friend accept send error',err)}
+  },
+  rejectFriendRequest(fromId){
+    if(!this._data.friendRequests)this._data.friendRequests=[];
+    this._data.friendRequests=this._data.friendRequests.filter(r=>r.fromId!==fromId);
+    this.save();
+  },
+  getPendingRequests(){return this._data.friendRequests||[]},
   updateMyKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.myKeyB64=kb;this.save()},
   updateTheirKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.theirKeyB64=kb;this.save()},
-  _migrateKeys(){for(const c of this._data.contacts){if(c.conversationKeyB64&&!c.myKeyB64){c.myKeyB64=c.conversationKeyB64;delete c.conversationKeyB64}}},
+  _migrateKeys(){for(const c of this._data.contacts){if(c.conversationKeyB64&&!c.myKeyB64){c.myKeyB64=c.conversationKeyB64;delete c.conversationKeyB64}if(!c.status)c.status='accepted'}if(!this._data.friendRequests)this._data.friendRequests=[]},
   getContact(id){return this._data.contacts.find(c=>c.id===id)},
 
   async sendMessage(ci,pt){
@@ -493,18 +554,23 @@ async function pasteRestore(){try{const t=await navigator.clipboard.readText();d
 async function doRestore(){const i=document.getElementById('restore-input').value.trim().toLowerCase();const n=i.split(/\s+/).join(' ');if(!CryptoUtils.validateMnemonic(n)){document.getElementById('restore-error').style.display='block';document.getElementById('restore-error').textContent='助记词无效，请检查拼写';return}document.getElementById('restore-error').style.display='none';await Store.createAccount(n);showPage('page-main');switchTab('chats')}
 
 function switchTab(t){currentTab=t;document.querySelectorAll('.tab-bar .tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));const c=document.getElementById('tab-content');if(t==='chats')renderChatsTab(c);else if(t==='contacts')renderContactsTab(c);else if(t==='profile')renderProfileTab(c)}
-function updateBadges(){const t=Store.getTotalUnread();const b=document.getElementById('tab-badge-chats');if(b){if(t>0){b.style.display='flex';b.textContent=t>99?'99+':t}else b.style.display='none'}}
+function updateBadges(){const t=Store.getTotalUnread();const b=document.getElementById('tab-badge-chats');if(b){if(t>0){b.style.display='flex';b.textContent=t>99?'99+':t}else b.style.display='none'}const fr=Store.getPendingRequests().length;const fb=document.getElementById('tab-badge-contacts');if(fb){if(fr>0){fb.style.display='flex';fb.textContent=fr}else fb.style.display='none'}}
 
-function renderChatsTab(container){const contacts=Store.contacts.slice().sort((a,b)=>{const la=Store.getLastMessage(a.id)?.timestamp||a.addedAt;const lb=Store.getLastMessage(b.id)?.timestamp||b.addedAt;return lb-la});let h=`<div class="header" style="position:relative"><div style="width:40px">${Store.user?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor};cursor:pointer" onclick="switchTab('profile')">${Store.user.displayName[0]}</div>`:''}</div><h2>消息</h2><div class="header-right"><button class="back-btn" style="font-size:22px;margin:0" onclick="showPage('page-add-contact')">➕</button></div></div><div class="search-bar"><div class="search-bar-inner">🔍 搜索</div></div>`;if(!contacts.length){h+=`<div class="empty-state"><div class="icon">💬</div><p>暂无会话</p><p style="font-size:13px">添加联系人开始聊天</p></div>`}else{h+=`<div class="conv-list">`;for(const c of contacts){const lm=Store.getLastMessage(c.id);const u=Store.conversations[c.id]?.unread||0;const t=lm?formatTime(lm.timestamp):'';h+=`<div class="conv-item" onclick="openChat('${c.id}')"><div class="avatar avatar-md" style="background:${c.avatarColor}">${c.displayName[0]}</div><div class="info"><div class="top"><span class="name">${esc(c.displayName)}</span><span class="time">${t}</span></div><div class="top" style="margin-top:1px"><span style="font-size:11px;color:var(--text-secondary);font-family:monospace">ID: ${c.id}</span></div><div class="bottom"><span class="preview"><span class="lock">🔒</span> <span id="conv-preview-${c.id}">${lm?'...':'[加密会话已建立]'}</span></span>${u>0?`<span class="unread-badge">${u}</span>`:''}</div></div></div>`}h+=`</div>`}container.innerHTML=h;for(const c of contacts){const lm=Store.getLastMessage(c.id);if(lm)Store.decryptMessage(c.id,lm).then(t=>{const el=document.getElementById(`conv-preview-${c.id}`);if(el)el.textContent=t.length>20?t.slice(0,20)+'...':t})}}
+function renderChatsTab(container){const contacts=Store.contacts.filter(x=>x.status==='accepted').slice().sort((a,b)=>{const la=Store.getLastMessage(a.id)?.timestamp||a.addedAt;const lb=Store.getLastMessage(b.id)?.timestamp||b.addedAt;return lb-la});let h=`<div class="header" style="position:relative"><div style="width:40px">${Store.user?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor};cursor:pointer" onclick="switchTab('profile')">${Store.user.displayName[0]}</div>`:''}</div><h2>消息</h2><div class="header-right"><button class="back-btn" style="font-size:22px;margin:0" onclick="showPage('page-add-contact')">➕</button></div></div><div class="search-bar"><div class="search-bar-inner">🔍 搜索</div></div>`;if(!contacts.length){h+=`<div class="empty-state"><div class="icon">💬</div><p>暂无会话</p><p style="font-size:13px">添加联系人开始聊天</p></div>`}else{h+=`<div class="conv-list">`;for(const c of contacts){const lm=Store.getLastMessage(c.id);const u=Store.conversations[c.id]?.unread||0;const t=lm?formatTime(lm.timestamp):'';h+=`<div class="conv-item" onclick="openChat('${c.id}')"><div class="avatar avatar-md" style="background:${c.avatarColor}">${c.displayName[0]}</div><div class="info"><div class="top"><span class="name">${esc(c.displayName)}</span><span class="time">${t}</span></div><div class="top" style="margin-top:1px"><span style="font-size:11px;color:var(--text-secondary);font-family:monospace">ID: ${c.id}</span></div><div class="bottom"><span class="preview"><span class="lock">🔒</span> <span id="conv-preview-${c.id}">${lm?'...':'[加密会话已建立]'}</span></span>${u>0?`<span class="unread-badge">${u}</span>`:''}</div></div></div>`}h+=`</div>`}container.innerHTML=h;for(const c of contacts){const lm=Store.getLastMessage(c.id);if(lm)Store.decryptMessage(c.id,lm).then(t=>{const el=document.getElementById(`conv-preview-${c.id}`);if(el)el.textContent=t.length>20?t.slice(0,20)+'...':t})}}
 
-function renderContactsTab(c){let h=`<div class="header"><div style="width:40px"></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div class="section-title">联系人 (${Store.contacts.length})</div><div style="flex:1;overflow-y:auto">`;for(const x of Store.contacts){const hm=!!x.myKeyB64;const ht=!!x.theirKeyB64;const st=(hm&&ht)?'双向加密已建立':hm?'已生成发送密钥·待导入对方密钥':ht?'已导入对方密钥·待生成发送密钥':'待建立加密';const dot=(hm&&ht)?'on':'off';h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot ${dot}"></span>${st}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
+function renderContactsTab(c){const frCount=Store.getPendingRequests().length;const accepted=Store.contacts.filter(x=>x.status==='accepted');const pendingOut=Store.contacts.filter(x=>x.status==='pending_out');let h=`<div class="header"><div style="width:40px"></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div style="flex:1;overflow-y:auto">`;h+=`<div class="contact-item" onclick="openFriendRequests()"><div class="avatar avatar-md" style="background:var(--orange)">🤝</div><div class="cinfo"><div class="cname">新的朋友</div><div class="cstatus">${frCount>0?`<span style="color:var(--red);font-weight:600">${frCount}条待处理</span>`:'暂无新请求'}</div></div></div>`;if(pendingOut.length>0){h+=`<div class="section-title">等待验证 (${pendingOut.length})</div>`;for(const x of pendingOut){h+=`<div class="contact-item" style="opacity:0.7"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot off"></span>等待对方同意</div></div></div>`}}h+=`<div class="section-title">好友 (${accepted.length})</div>`;for(const x of accepted){const hm=!!x.myKeyB64;const ht=!!x.theirKeyB64;const st=(hm&&ht)?'双向加密已建立':hm?'已生成发送密钥·待导入对方密钥':ht?'已导入对方密钥·待生成发送密钥':'待建立加密';const dot=(hm&&ht)?'on':'off';h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot ${dot}"></span>${st}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
 
+function openFriendRequests(){renderFriendRequests();showPage('page-friend-requests')}
+function renderFriendRequests(){const body=document.getElementById('friend-requests-body');const reqs=Store.getPendingRequests();if(!reqs.length){body.innerHTML=`<div class="empty-state"><div class="icon">🤝</div><p>暂无好友请求</p></div>`;return}let h='';for(const r of reqs){const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];const ac=colors[Math.abs(hashCode(r.fromId))%colors.length];const t=formatTime(r.timestamp);h+=`<div class="contact-item" style="padding:12px 16px"><div class="avatar avatar-md" style="background:${ac}">${r.fromName[0]}</div><div class="cinfo" style="flex:1"><div class="cname">${esc(r.fromName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${r.fromId}</div><div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${t}</div></div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-small" style="padding:4px 12px;font-size:13px" onclick="doAcceptFriend('${r.fromId}','${esc(r.fromName)}')">同意</button><button class="btn btn-secondary btn-small" style="padding:4px 12px;font-size:13px" onclick="doRejectFriend('${r.fromId}')">拒绝</button></div></div>`}body.innerHTML=h}
+async function doAcceptFriend(id,name){await Store.acceptFriendRequest(id,name);renderFriendRequests();updateBadges()}
+function doRejectFriend(id){Store.rejectFriendRequest(id);renderFriendRequests();updateBadges()}
 function renderProfileTab(c){const u=Store.user;if(!u)return;c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
 function viewMnemonic(){const m=Store.mnemonic;if(!m)return;const w=m.split(' ');document.getElementById('mnemonic-view-body').innerHTML=`<div class="step-icon">👁️‍🗨️</div><div class="step-title">您的助记词</div><div class="step-desc">请勿在公共场合展示</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyText('${m}',this)">📋 复制助记词</button>`;showPage('page-mnemonic-view')}
 function doLogout(){if(confirm('退出后需要助记词才能恢复账户。确认退出？')){Store.logout();pageStack=[];document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-welcome').classList.add('active')}}
 
 function openChat(ci){
   const c=Store.getContact(ci);if(!c)return;
+  if(c.status!=='accepted'){alert('对方尚未同意好友请求');return}
   currentChatContact=ci;
   const hasMyKey=!!c.myKeyB64;const hasTheirKey=!!c.theirKeyB64;
   document.getElementById('chat-title').innerHTML=esc(c.displayName)+'<div style="font-size:11px;color:var(--text-secondary);font-family:monospace;font-weight:400">ID: '+ci+'</div>';
@@ -550,8 +616,8 @@ async function showKeyInfo(){const ci=currentChatContact;const co=Store.getConta
 async function generateKeyForContact(ci){const k=await CryptoUtils.generateConversationKey();Store.updateMyKey(ci,await CryptoUtils.exportKey(k));if(currentChatContact===ci){document.getElementById('chat-send-btn').disabled=false;const co=Store.getContact(ci);if(co?.theirKeyB64){document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒'}else{document.getElementById('chat-key-banner').style.display='flex';document.getElementById('chat-key-banner').innerHTML='🔒 未输入对方密钥，对方消息显示为密文 <span class="action" onclick="showPage(\'page-key-input\')">输入密钥</span>'}}closePage('page-key-info');showKeyInfo()}
 async function pasteKeyInput(){try{const t=await navigator.clipboard.readText();document.getElementById('key-input-text').value=t.trim()}catch{}}
 async function doImportKey(){const kb=document.getElementById('key-input-text').value.trim();const k=await CryptoUtils.importKey(kb);if(!k){document.getElementById('key-input-error').style.display='block';document.getElementById('key-input-error').textContent='密钥格式无效，请检查后重试';return}document.getElementById('key-input-error').style.display='none';Store.updateTheirKey(currentChatContact,kb);const co=Store.getContact(currentChatContact);if(co?.myKeyB64){document.getElementById('chat-key-banner').style.display='none';document.getElementById('chat-lock-btn').textContent='🔒'}document.getElementById('key-input-text').value='';closePage('page-key-input');renderMessages()}
-function toggleManualKey(){document.getElementById('add-contact-key-group').style.display=document.getElementById('add-contact-auto-key').checked?'none':'block'}
-async function doAddContact(){const id=document.getElementById('add-contact-id').value.trim();const nm=document.getElementById('add-contact-name').value.trim();if(!id||!nm)return alert('请填写用户ID和备注名');let mk=null;if(document.getElementById('add-contact-auto-key').checked){const k=await CryptoUtils.generateConversationKey();mk=await CryptoUtils.exportKey(k)}else{mk=document.getElementById('add-contact-key').value.trim()||null}await Store.addContact(id,nm,mk);document.getElementById('add-contact-id').value='';document.getElementById('add-contact-name').value='';document.getElementById('add-contact-key').value='';document.getElementById('add-contact-auto-key').checked=true;toggleManualKey();closePage('page-add-contact')}
+
+async function doAddContact(){const id=document.getElementById('add-contact-id').value.trim();const nm=document.getElementById('add-contact-name').value.trim();if(!id||!nm)return alert('请填写用户ID和备注名');if(Store.getContact(id))return alert('该联系人已存在');await Store.sendFriendRequest(id,nm);document.getElementById('add-contact-id').value='';document.getElementById('add-contact-name').value='';closePage('page-add-contact');alert('好友请求已发送，等待对方确认')}
 
 function refreshCurrentView(){if(currentChatContact)renderMessages();const c=document.getElementById('tab-content');if(c&&document.getElementById('page-main').classList.contains('active'))switchTab(currentTab)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
