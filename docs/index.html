@@ -148,7 +148,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .chat-page .messages { flex: 1; overflow-y: auto; background: var(--bg); padding: 8px 0; }
 .msg-row { display: flex; padding: 4px 12px; align-items: flex-start; gap: 8px; }
 .msg-row.mine { flex-direction: row-reverse; }
-.msg-bubble { max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 16px; line-height: 1.5; word-break: break-word; cursor: pointer; position: relative; }
+.msg-bubble { display: inline-block; max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 16px; line-height: 1.5; overflow-wrap: break-word; word-break: normal; cursor: pointer; position: relative; }
 .msg-bubble.other { background: white; }
 .msg-bubble.mine { background: var(--green); }
 .msg-bubble .encrypted-text { font-size: 11px; color: var(--text-secondary); font-family: monospace; word-break: break-all; }
