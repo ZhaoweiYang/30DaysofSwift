@@ -327,29 +327,83 @@ const CryptoUtils={
   async decrypt(b,k){try{const m=Uint8Array.from(atob(b),c=>c.charCodeAt(0));const d=await crypto.subtle.decrypt({name:'AES-GCM',iv:m.slice(0,12)},k,m.slice(12));return new TextDecoder().decode(d)}catch{return null}}
 };
 
-// ==================== Store ====================
+// ==================== Store (per-user + cross-tab relay) ====================
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,9)}
 function hashCode(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return h}
 const Store={
   _listeners:[],_data:{user:null,mnemonic:null,contacts:[],conversations:{}},
-  save(){localStorage.setItem('secureChat',JSON.stringify(this._data));this._notify()},
-  load(){const r=localStorage.getItem('secureChat');if(r)try{this._data=JSON.parse(r)}catch{}},
-  clear(){this._data={user:null,mnemonic:null,contacts:[],conversations:{}};localStorage.removeItem('secureChat');this._notify()},
+  _storageKey(){return this._data.user?'sc_'+this._data.user.id:'sc_tmp'},
+  save(){localStorage.setItem(this._storageKey(),JSON.stringify(this._data));this._notify()},
+  load(){
+    // Try to find which user session exists in this tab
+    const sid=sessionStorage.getItem('sc_session');
+    if(sid){const r=localStorage.getItem('sc_'+sid);if(r)try{this._data=JSON.parse(r)}catch{}}
+  },
+  clear(){
+    const k=this._storageKey();
+    this._data={user:null,mnemonic:null,contacts:[],conversations:{}};
+    localStorage.removeItem(k);sessionStorage.removeItem('sc_session');
+    this._notify();
+  },
   onChange(fn){this._listeners.push(fn)},_notify(){this._listeners.forEach(fn=>fn(this._data))},
   get user(){return this._data.user},get mnemonic(){return this._data.mnemonic},get contacts(){return this._data.contacts},get conversations(){return this._data.conversations},get isLoggedIn(){return!!this._data.user},
-  async createAccount(m,d){const id=await CryptoUtils.deriveUserID(m);const n=d||CryptoUtils.deriveDisplayName(m);const c=['#4A90D9','#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#E67E22','#3498DB'];this._data.user={id,displayName:n,avatarColor:c[Math.abs(hashCode(id))%c.length],createdAt:Date.now()};this._data.mnemonic=m;this.save()},
+  async createAccount(m,d){
+    const id=await CryptoUtils.deriveUserID(m);const n=d||CryptoUtils.deriveDisplayName(m);
+    const c=['#4A90D9','#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#E67E22','#3498DB'];
+    // Check if account data already exists (restore case)
+    const existing=localStorage.getItem('sc_'+id);
+    if(existing){try{this._data=JSON.parse(existing);this._data.user.displayName=d||this._data.user.displayName;this._data.mnemonic=m}catch{}}
+    else{this._data.user={id,displayName:n,avatarColor:c[Math.abs(hashCode(id))%c.length],createdAt:Date.now()};this._data.mnemonic=m}
+    sessionStorage.setItem('sc_session',id);this.save();
+    // Register user in global directory so other tabs can discover display names
+    const dir=JSON.parse(localStorage.getItem('sc_directory')||'{}');
+    dir[id]={displayName:this._data.user.displayName,avatarColor:this._data.user.avatarColor};
+    localStorage.setItem('sc_directory',JSON.stringify(dir));
+  },
   logout(){this.clear()},
   async addContact(id,dn,kb){if(this._data.contacts.find(c=>c.id===id))return;const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],conversationKeyB64:kb||null,addedAt:Date.now()});this._data.conversations[id]={messages:[],unread:0};this.save()},
   updateContactKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.conversationKeyB64=kb;this.save()},
   getContact(id){return this._data.contacts.find(c=>c.id===id)},
-  async sendMessage(ci,pt){const c=this.getContact(ci);if(!c?.conversationKeyB64||!this._data.user)return false;const k=await CryptoUtils.importKey(c.conversationKeyB64);if(!k)return false;const e=await CryptoUtils.encrypt(pt,k);this._data.conversations[ci].messages.push({id:uid(),senderId:this._data.user.id,recipientId:ci,encrypted:e,timestamp:Date.now(),isRead:true});this.save();this._simulateReply(ci,k);return true},
+  async sendMessage(ci,pt){
+    const c=this.getContact(ci);if(!c?.conversationKeyB64||!this._data.user)return false;
+    const k=await CryptoUtils.importKey(c.conversationKeyB64);if(!k)return false;
+    const e=await CryptoUtils.encrypt(pt,k);
+    const msg={id:uid(),senderId:this._data.user.id,recipientId:ci,encrypted:e,timestamp:Date.now(),isRead:true};
+    this._data.conversations[ci].messages.push(msg);this.save();
+    // === Cross-tab relay: write message to shared relay channel ===
+    // Other tabs listen for 'storage' events on keys starting with 'sc_relay_'
+    const relayMsg={id:msg.id,senderId:msg.senderId,recipientId:msg.recipientId,encrypted:msg.encrypted,timestamp:msg.timestamp};
+    localStorage.setItem('sc_relay_'+msg.id,JSON.stringify(relayMsg));
+    // Clean up relay after short delay (other tabs will have picked it up)
+    setTimeout(()=>localStorage.removeItem('sc_relay_'+msg.id),5000);
+    return true;
+  },
+  // Called when we receive a relayed message from another tab
+  _receiveRelayMessage(msg){
+    if(!this._data.user)return;
+    // Only accept messages addressed to us
+    if(msg.recipientId!==this._data.user.id)return;
+    // Check if sender is in our contacts
+    const senderId=msg.senderId;
+    if(!this._data.conversations[senderId])return;
+    // Don't add duplicates
+    if(this._data.conversations[senderId].messages.find(m=>m.id===msg.id))return;
+    this._data.conversations[senderId].messages.push({id:msg.id,senderId:msg.senderId,recipientId:msg.recipientId,encrypted:msg.encrypted,timestamp:msg.timestamp,isRead:false});
+    this._data.conversations[senderId].unread=(this._data.conversations[senderId].unread||0)+1;
+    this.save();
+  },
   async decryptMessage(ci,m){const c=this.getContact(ci);if(!c?.conversationKeyB64)return'[需要密钥解密]';const k=await CryptoUtils.importKey(c.conversationKeyB64);if(!k)return'[密钥无效]';return await CryptoUtils.decrypt(m.encrypted,k)||'[解密失败]'},
   markRead(ci){const v=this._data.conversations[ci];if(v){v.unread=0;v.messages.forEach(m=>m.isRead=true);this.save()}},
   getLastMessage(ci){const m=this._data.conversations[ci]?.messages;return m?.length?m[m.length-1]:null},
   getTotalUnread(){return Object.values(this._data.conversations).reduce((s,c)=>s+(c.unread||0),0)},
-  async _simulateReply(ci,k){const rp=['收到！','好的，明白了','👍','稍等一下','没问题','我看看','这个不错','同意','OK!','马上处理','谢谢','晚点再聊'];setTimeout(async()=>{const r=rp[Math.floor(Math.random()*rp.length)];const e=await CryptoUtils.encrypt(r,k);const c=this.getContact(ci);if(!c)return;this._data.conversations[ci].messages.push({id:uid(),senderId:ci,recipientId:this._data.user.id,encrypted:e,timestamp:Date.now(),isRead:false});this._data.conversations[ci].unread++;this.save()},1500+Math.random()*2000)},
-  async addDemoContacts(){const k1=await CryptoUtils.generateConversationKey();const k2=await CryptoUtils.generateConversationKey();const k3=await CryptoUtils.generateConversationKey();await this.addContact('demo001','Alice',await CryptoUtils.exportKey(k1));await this.addContact('demo002','Bob',await CryptoUtils.exportKey(k2));await this.addContact('demo003','小明',await CryptoUtils.exportKey(k3))}
+  async addDemoContacts(){}  // No demo contacts - real users add each other
 };
+// === Cross-tab message listener ===
+window.addEventListener('storage',function(e){
+  if(e.key&&e.key.startsWith('sc_relay_')&&e.newValue){
+    try{const msg=JSON.parse(e.newValue);Store._receiveRelayMessage(msg)}catch{}
+  }
+});
 
 // ==================== App Logic ====================
 let currentChatContact=null,createStep=0,createMnemonic='',createConfirmed=false,currentTab='chats',chatRefreshTimer=null,pageStack=[];
@@ -360,12 +414,12 @@ function showPage(id,slide=true){const c=document.querySelector('.page.active');
 function closePage(id){document.getElementById(id).classList.remove('active');if(pageStack.length){const p=pageStack.pop();document.getElementById(p).classList.add('active')}}
 
 function initCreateFlow(){createStep=0;createMnemonic=CryptoUtils.generateMnemonic();createConfirmed=false;renderCreateStep()}
-function renderCreateStep(){const body=document.getElementById('create-body'),actions=document.getElementById('create-actions');if(createStep===0){const w=createMnemonic.split(' ');body.innerHTML=`<div class="step-icon">🔑</div><div class="step-title">您的助记词</div><div class="step-desc">以下12个词是您的账户密钥。<br>请务必安全保存，丢失后无法找回。</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyMnemonic()">📋 复制助记词</button>`;actions.innerHTML=`<button class="btn btn-primary" onclick="createStep=1;renderCreateStep()">下一步</button>`}else if(createStep===1){body.innerHTML=`<div class="step-icon">⚠️</div><div class="step-title">确认备份</div><div class="step-desc">请确认您已安全保存助记词。<br>这是恢复账户的唯一方式。</div><div class="warning-box"><div class="warning-row"><span class="icon">⚠️</span> 助记词是您账户的唯一凭证</div><div class="warning-row"><span class="icon">⚠️</span> 请勿截图或在线存储助记词</div><div class="warning-row"><span class="icon">⚠️</span> 建议手写在纸上并妥善保管</div><div class="warning-row"><span class="icon">⚠️</span> 任何人获得助记词即可控制账户</div></div><div class="checkbox-row"><input type="checkbox" id="confirm-backup" onchange="createConfirmed=this.checked;renderCreateActions()"> <label for="confirm-backup">我已安全保存助记词</label></div>`;actions.innerHTML=`<button class="btn btn-secondary" onclick="createStep=0;renderCreateStep()">返回</button><button class="btn btn-primary" id="create-next-btn" disabled onclick="createStep=2;renderCreateStep()">下一步</button>`}else if(createStep===2){const dn=CryptoUtils.deriveDisplayName(createMnemonic);body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:#4A90D9">${dn[0]}</div><div class="step-title" style="margin-top:16px">设置昵称</div><div class="step-desc">给自己取一个昵称吧</div><div class="input-group"><input id="create-name" placeholder="输入昵称（留空使用默认: ${dn}）"></div><div style="font-size:13px;color:var(--text-secondary)">您的ID将在创建后显示</div>`;actions.innerHTML=`<button class="btn btn-primary" onclick="doCreateAccount()">完成创建</button>`}}
+function renderCreateStep(){const body=document.getElementById('create-body'),actions=document.getElementById('create-actions');if(createStep===0){const w=createMnemonic.split(' ');body.innerHTML=`<div class="step-icon">🔑</div><div class="step-title">您的助记词</div><div class="step-desc">以下12个词是您的账户密钥。<br>请务必安全保存，丢失后无法找回。</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyMnemonic()">📋 复制助记词</button>`;actions.innerHTML=`<button class="btn btn-primary" onclick="createStep=1;renderCreateStep()">下一步</button>`}else if(createStep===1){body.innerHTML=`<div class="step-icon">⚠️</div><div class="step-title">确认备份</div><div class="step-desc">请确认您已安全保存助记词。<br>这是恢复账户的唯一方式。</div><div class="warning-box"><div class="warning-row"><span class="icon">⚠️</span> 助记词是您账户的唯一凭证</div><div class="warning-row"><span class="icon">⚠️</span> 请勿截图或在线存储助记词</div><div class="warning-row"><span class="icon">⚠️</span> 建议手写在纸上并妥善保管</div><div class="warning-row"><span class="icon">⚠️</span> 任何人获得助记词即可控制账户</div></div><div class="checkbox-row"><input type="checkbox" id="confirm-backup" onchange="createConfirmed=this.checked;renderCreateActions()"> <label for="confirm-backup">我已安全保存助记词</label></div>`;actions.innerHTML=`<button class="btn btn-secondary" onclick="createStep=0;renderCreateStep()">返回</button><button class="btn btn-primary" id="create-next-btn" disabled onclick="createStep=2;renderCreateStep()">下一步</button>`}else if(createStep===2){const dn=CryptoUtils.deriveDisplayName(createMnemonic);CryptoUtils.deriveUserID(createMnemonic).then(previewId=>{body.innerHTML=`<div class="avatar avatar-lg avatar-round" style="background:#4A90D9">${dn[0]}</div><div class="step-title" style="margin-top:16px">设置昵称</div><div class="step-desc">给自己取一个昵称吧</div><div class="input-group"><input id="create-name" placeholder="输入昵称（留空使用默认: ${dn}）"></div><div style="margin-top:12px;padding:12px 16px;background:#F5F5F5;border-radius:10px;width:100%"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">您的用户ID（分享给他人添加您）</div><div style="font-size:15px;font-family:monospace;font-weight:600;word-break:break-all">${previewId}</div></div>`});actions.innerHTML=`<button class="btn btn-primary" onclick="doCreateAccount()">完成创建</button>`}}
 function renderCreateActions(){const b=document.getElementById('create-next-btn');if(b)b.disabled=!createConfirmed}
 function copyMnemonic(){navigator.clipboard.writeText(createMnemonic).then(()=>{const b=document.querySelector('.create-page .copy-btn');if(b){b.textContent='✅ 已复制';setTimeout(()=>b.textContent='📋 复制助记词',2000)}})}
-async function doCreateAccount(){const n=document.getElementById('create-name')?.value.trim()||null;await Store.createAccount(createMnemonic,n);await Store.addDemoContacts();showPage('page-main');switchTab('chats')}
+async function doCreateAccount(){const n=document.getElementById('create-name')?.value.trim()||null;await Store.createAccount(createMnemonic,n);showPage('page-main');switchTab('chats')}
 async function pasteRestore(){try{const t=await navigator.clipboard.readText();document.getElementById('restore-input').value=t;document.getElementById('restore-input').dispatchEvent(new Event('input'))}catch{}}
-async function doRestore(){const i=document.getElementById('restore-input').value.trim().toLowerCase();const n=i.split(/\s+/).join(' ');if(!CryptoUtils.validateMnemonic(n)){document.getElementById('restore-error').style.display='block';document.getElementById('restore-error').textContent='助记词无效，请检查拼写';return}document.getElementById('restore-error').style.display='none';await Store.createAccount(n);await Store.addDemoContacts();showPage('page-main');switchTab('chats')}
+async function doRestore(){const i=document.getElementById('restore-input').value.trim().toLowerCase();const n=i.split(/\s+/).join(' ');if(!CryptoUtils.validateMnemonic(n)){document.getElementById('restore-error').style.display='block';document.getElementById('restore-error').textContent='助记词无效，请检查拼写';return}document.getElementById('restore-error').style.display='none';await Store.createAccount(n);showPage('page-main');switchTab('chats')}
 
 function switchTab(t){currentTab=t;document.querySelectorAll('.tab-bar .tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));const c=document.getElementById('tab-content');if(t==='chats')renderChatsTab(c);else if(t==='contacts')renderContactsTab(c);else if(t==='discover')renderDiscoverTab(c);else if(t==='profile')renderProfileTab(c)}
 function updateBadges(){const t=Store.getTotalUnread();const b=document.getElementById('tab-badge-chats');if(t>0){b.style.display='flex';b.textContent=t>99?'99+':t}else b.style.display='none'}
