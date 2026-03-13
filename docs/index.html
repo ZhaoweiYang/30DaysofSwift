@@ -478,7 +478,7 @@ const Store={
     }
     return result;
   },
-  markRead(ci){const v=this._data.conversations[ci];if(v){v.unread=0;v.messages.forEach(m=>m.isRead=true);this.save()}},
+  markRead(ci){const v=this._data.conversations[ci];if(!v)return;let ch=false;if(v.unread>0){v.unread=0;ch=true}v.messages.forEach(m=>{if(!m.isRead){m.isRead=true;ch=true}});if(ch)this.save()},
   getLastMessage(ci){const m=this._data.conversations[ci]?.messages;return m?.length?m[m.length-1]:null},
   getTotalUnread(){return Object.values(this._data.conversations).reduce((s,c)=>s+(c.unread||0),0)},
   async addDemoContacts(){}
