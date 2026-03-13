@@ -337,13 +337,13 @@ const Store={
   _storageKey(){return this._data.user?'sc_'+this._data.user.id:'sc_tmp'},
   save(){localStorage.setItem(this._storageKey(),JSON.stringify(this._data));this._notify()},
   load(){
-    const sid=sessionStorage.getItem('sc_session');
+    const sid=localStorage.getItem('sc_session');
     if(sid){const r=localStorage.getItem('sc_'+sid);if(r)try{this._data=JSON.parse(r)}catch{}}
   },
   clear(){
     const k=this._storageKey();
     this._data={user:null,mnemonic:null,contacts:[],conversations:{}};
-    localStorage.removeItem(k);sessionStorage.removeItem('sc_session');
+    localStorage.removeItem(k);localStorage.removeItem('sc_session');
     this._notify();
   },
   onChange(fn){this._listeners.push(fn)},_notify(){this._listeners.forEach(fn=>fn(this._data))},
@@ -355,7 +355,7 @@ const Store={
     const existing=localStorage.getItem('sc_'+id);
     if(existing){try{this._data=JSON.parse(existing);this._data.user.displayName=d||this._data.user.displayName;this._data.mnemonic=m}catch{}}
     else{this._data.user={id,displayName:n,avatarColor:c[Math.abs(hashCode(id))%c.length],createdAt:Date.now()};this._data.mnemonic=m}
-    sessionStorage.setItem('sc_session',id);this.save();
+    localStorage.setItem('sc_session',id);this.save();
     this._subscribe();
   },
 
