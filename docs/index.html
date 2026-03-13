@@ -332,15 +332,32 @@ const Store={
   _listeners:[],_data:{user:null,mnemonic:null,contacts:[],conversations:{}},
   _sse:null,
   _storageKey(){return this._data.user?'sc_'+this._data.user.id:'sc_tmp'},
+  _setSession(id){
+    try{localStorage.setItem('sc_session',id)}catch{}
+    try{document.cookie='sc_session='+encodeURIComponent(id)+';path=/;max-age=31536000;SameSite=Lax'}catch{}
+    try{const r=indexedDB.open('sc_db',1);r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains('kv'))db.createObjectStore('kv')};r.onsuccess=e=>{const tx=e.target.result.transaction('kv','readwrite');tx.objectStore('kv').put(id,'session')}}catch{}
+  },
+  _getSession(){
+    let s=null;
+    try{s=localStorage.getItem('sc_session')}catch{}
+    if(!s){try{const m=document.cookie.match(/(?:^|;\s*)sc_session=([^;]*)/);if(m)s=decodeURIComponent(m[1])}catch{}}
+    return s;
+  },
+  _clearSession(){
+    try{localStorage.removeItem('sc_session')}catch{}
+    try{document.cookie='sc_session=;path=/;max-age=0;SameSite=Lax'}catch{}
+    try{const r=indexedDB.open('sc_db',1);r.onsuccess=e=>{try{const tx=e.target.result.transaction('kv','readwrite');tx.objectStore('kv').delete('session')}catch{}}}catch{}
+  },
   save(){localStorage.setItem(this._storageKey(),JSON.stringify(this._data));this._notify()},
   load(){
-    const sid=localStorage.getItem('sc_session');
-    if(sid){const r=localStorage.getItem('sc_'+sid);if(r)try{this._data=JSON.parse(r)}catch{}}
+    let sid=this._getSession();
+    if(!sid){try{const r=indexedDB.open('sc_db',1);r.onsuccess=e=>{try{const tx=e.target.result.transaction('kv','readonly');const g=tx.objectStore('kv').get('session');g.onsuccess=()=>{if(g.result&&!this.isLoggedIn){const d=localStorage.getItem('sc_'+g.result);if(d)try{this._data=JSON.parse(d);this._setSession(g.result);this._notify();this._subscribe();showPage('page-main');switchTab('chats')}catch{}}}}catch{}}}catch{}}
+    if(sid){const r=localStorage.getItem('sc_'+sid);if(r)try{this._data=JSON.parse(r);this._setSession(sid)}catch{}}
   },
   clear(){
     const k=this._storageKey();
     this._data={user:null,mnemonic:null,contacts:[],conversations:{}};
-    localStorage.removeItem(k);localStorage.removeItem('sc_session');
+    localStorage.removeItem(k);this._clearSession();
     this._notify();
   },
   onChange(fn){this._listeners.push(fn)},_notify(){this._listeners.forEach(fn=>fn(this._data))},
@@ -352,7 +369,7 @@ const Store={
     const existing=localStorage.getItem('sc_'+id);
     if(existing){try{this._data=JSON.parse(existing);this._data.user.displayName=d||this._data.user.displayName;this._data.mnemonic=m}catch{}}
     else{this._data.user={id,displayName:n,avatarColor:c[Math.abs(hashCode(id))%c.length],createdAt:Date.now()};this._data.mnemonic=m}
-    localStorage.setItem('sc_session',id);this.save();
+    this._setSession(id);this.save();
     this._subscribe();
   },
 
