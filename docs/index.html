@@ -327,12 +327,13 @@ const CryptoUtils={
   async decrypt(b,k){try{const m=Uint8Array.from(atob(b),c=>c.charCodeAt(0));const d=await crypto.subtle.decrypt({name:'AES-GCM',iv:m.slice(0,12)},k,m.slice(12));return new TextDecoder().decode(d)}catch{return null}}
 };
 
-// ==================== Store (per-user + direct cross-tab injection) ====================
+// ==================== Store (ntfy.sh relay for cross-device messaging) ====================
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,9)}
 function hashCode(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return h}
+const RELAY='https://ntfy.sh';
 const Store={
   _listeners:[],_data:{user:null,mnemonic:null,contacts:[],conversations:{}},
-  _syncTimer:null,
+  _sse:null,
   _storageKey(){return this._data.user?'sc_'+this._data.user.id:'sc_tmp'},
   save(){localStorage.setItem(this._storageKey(),JSON.stringify(this._data));this._notify()},
   load(){
@@ -347,6 +348,7 @@ const Store={
   },
   onChange(fn){this._listeners.push(fn)},_notify(){this._listeners.forEach(fn=>fn(this._data))},
   get user(){return this._data.user},get mnemonic(){return this._data.mnemonic},get contacts(){return this._data.contacts},get conversations(){return this._data.conversations},get isLoggedIn(){return!!this._data.user},
+
   async createAccount(m,d){
     const id=await CryptoUtils.deriveUserID(m);const n=d||CryptoUtils.deriveDisplayName(m);
     const c=['#4A90D9','#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#E67E22','#3498DB'];
@@ -354,12 +356,58 @@ const Store={
     if(existing){try{this._data=JSON.parse(existing);this._data.user.displayName=d||this._data.user.displayName;this._data.mnemonic=m}catch{}}
     else{this._data.user={id,displayName:n,avatarColor:c[Math.abs(hashCode(id))%c.length],createdAt:Date.now()};this._data.mnemonic=m}
     sessionStorage.setItem('sc_session',id);this.save();
-    const dir=JSON.parse(localStorage.getItem('sc_directory')||'{}');
-    dir[id]={displayName:this._data.user.displayName,avatarColor:this._data.user.avatarColor};
-    localStorage.setItem('sc_directory',JSON.stringify(dir));
-    this._startSync();
+    this._subscribe();
   },
-  logout(){this.clear();if(this._syncTimer)clearInterval(this._syncTimer)},
+
+  logout(){if(this._sse){this._sse.close();this._sse=null}this.clear()},
+
+  // === ntfy.sh: Subscribe to own channel for incoming messages ===
+  _subscribe(){
+    if(this._sse){this._sse.close();this._sse=null}
+    if(!this._data.user)return;
+    const topic='securechat_'+this._data.user.id;
+    const url=RELAY+'/'+topic+'/sse';
+    console.log('[SecureChat] Subscribing to',url);
+    this._sse=new EventSource(url);
+    this._sse.addEventListener('message',e=>{
+      try{
+        const ntfy=JSON.parse(e.data);
+        if(ntfy.event!=='message')return;
+        const msg=JSON.parse(ntfy.message);
+        console.log('[SecureChat] Received relay message',msg.id);
+        this._onRelayMessage(msg);
+      }catch(err){console.error('[SecureChat] relay parse error',err)}
+    });
+    this._sse.onerror=()=>{
+      console.log('[SecureChat] SSE reconnecting...');
+    };
+  },
+
+  // Handle incoming relayed message
+  _onRelayMessage(msg){
+    if(!this._data.user)return;
+    if(msg.recipientId!==this._data.user.id)return;
+    const senderId=msg.senderId;
+    // Auto-create contact if not known
+    if(!this._data.conversations[senderId]){
+      const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];
+      const dn=msg.senderName||'User_'+senderId.slice(0,6);
+      const ac=colors[Math.abs(hashCode(senderId))%colors.length];
+      if(!this._data.contacts.find(x=>x.id===senderId)){
+        this._data.contacts.push({id:senderId,displayName:dn,avatarColor:ac,conversationKeyB64:null,addedAt:Date.now()});
+      }
+      this._data.conversations[senderId]={messages:[],unread:0};
+    }
+    // Deduplicate
+    if(this._data.conversations[senderId].messages.find(m=>m.id===msg.id))return;
+    this._data.conversations[senderId].messages.push({
+      id:msg.id,senderId:msg.senderId,recipientId:msg.recipientId,
+      encrypted:msg.encrypted,timestamp:msg.timestamp,isRead:false
+    });
+    this._data.conversations[senderId].unread=(this._data.conversations[senderId].unread||0)+1;
+    this.save();
+  },
+
   async addContact(id,dn,kb){if(this._data.contacts.find(c=>c.id===id))return;const c=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];this._data.contacts.push({id,displayName:dn,avatarColor:c[Math.abs(hashCode(id))%c.length],conversationKeyB64:kb||null,addedAt:Date.now()});this._data.conversations[id]={messages:[],unread:0};this.save()},
   updateContactKey(ci,kb){const c=this._data.contacts.find(x=>x.id===ci);if(c)c.conversationKeyB64=kb;this.save()},
   getContact(id){return this._data.contacts.find(c=>c.id===id)},
@@ -371,96 +419,14 @@ const Store={
     const msg={id:uid(),senderId:this._data.user.id,recipientId:ci,encrypted:e,timestamp:Date.now(),isRead:true};
     this._data.conversations[ci].messages.push(msg);
     this.save();
-    // === Cross-tab: directly inject message into recipient's data store ===
-    this._injectToRecipient(ci,msg);
+    // === Relay encrypted message to recipient via ntfy.sh ===
+    const relay={id:msg.id,senderId:msg.senderId,recipientId:msg.recipientId,encrypted:msg.encrypted,timestamp:msg.timestamp,senderName:this._data.user.displayName};
+    try{
+      const topic='securechat_'+ci;
+      console.log('[SecureChat] Sending to',topic);
+      await fetch(RELAY+'/'+topic,{method:'POST',body:JSON.stringify(relay)});
+    }catch(err){console.error('[SecureChat] relay send error',err)}
     return true;
-  },
-
-  // Directly write message into recipient's localStorage data
-  _injectToRecipient(recipientId,msg){
-    const recipientKey='sc_'+recipientId;
-    try{
-      const raw=localStorage.getItem(recipientKey);
-      if(!raw)return; // recipient hasn't created account yet
-      const data=JSON.parse(raw);
-      if(!data.conversations||!data.user)return;
-      const senderId=msg.senderId;
-      // If recipient doesn't have sender as contact, auto-add
-      if(!data.conversations[senderId]){
-        const dir=JSON.parse(localStorage.getItem('sc_directory')||'{}');
-        const info=dir[senderId];
-        const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];
-        const dn=info?info.displayName:'User_'+senderId.slice(0,6);
-        const ac=info?.avatarColor||colors[Math.abs(hashCode(senderId))%colors.length];
-        if(!data.contacts)data.contacts=[];
-        if(!data.contacts.find(x=>x.id===senderId)){
-          data.contacts.push({id:senderId,displayName:dn,avatarColor:ac,conversationKeyB64:null,addedAt:Date.now()});
-        }
-        data.conversations[senderId]={messages:[],unread:0};
-      }
-      // Check for duplicate
-      if(data.conversations[senderId].messages.find(m=>m.id===msg.id))return;
-      // Add the message
-      data.conversations[senderId].messages.push({
-        id:msg.id,senderId:msg.senderId,recipientId:msg.recipientId,
-        encrypted:msg.encrypted,timestamp:msg.timestamp,isRead:false
-      });
-      data.conversations[senderId].unread=(data.conversations[senderId].unread||0)+1;
-      localStorage.setItem(recipientKey,JSON.stringify(data));
-    }catch(e){console.error('inject failed',e)}
-  },
-
-  // Periodically re-read own data from localStorage to pick up messages injected by other tabs
-  _syncFromStorage(){
-    if(!this._data.user)return;
-    try{
-      const raw=localStorage.getItem(this._storageKey());
-      if(!raw)return;
-      const fresh=JSON.parse(raw);
-      if(!fresh.conversations)return;
-      let changed=false;
-      // Merge new contacts
-      if(fresh.contacts){
-        for(const fc of fresh.contacts){
-          if(!this._data.contacts.find(x=>x.id===fc.id)){
-            this._data.contacts.push(fc);
-            changed=true;
-          }
-        }
-      }
-      // Merge new conversations and messages
-      for(const ci in fresh.conversations){
-        if(!this._data.conversations[ci]){
-          this._data.conversations[ci]=fresh.conversations[ci];
-          changed=true;
-        }else{
-          const myMsgs=this._data.conversations[ci].messages;
-          const freshMsgs=fresh.conversations[ci].messages;
-          for(const fm of freshMsgs){
-            if(!myMsgs.find(m=>m.id===fm.id)){
-              myMsgs.push(fm);
-              changed=true;
-            }
-          }
-          // Sync unread count from storage if higher
-          const freshUnread=fresh.conversations[ci].unread||0;
-          if(freshUnread>this._data.conversations[ci].unread){
-            this._data.conversations[ci].unread=freshUnread;
-            changed=true;
-          }
-        }
-      }
-      if(changed){
-        // Save merged data back and notify UI
-        localStorage.setItem(this._storageKey(),JSON.stringify(this._data));
-        this._notify();
-      }
-    }catch(e){console.error('sync failed',e)}
-  },
-
-  _startSync(){
-    if(this._syncTimer)clearInterval(this._syncTimer);
-    this._syncTimer=setInterval(()=>this._syncFromStorage(),600);
   },
 
   async decryptMessage(ci,m){
@@ -473,9 +439,7 @@ const Store={
     const k=await CryptoUtils.importKey(c.conversationKeyB64);
     if(!k)return m.encrypted?m.encrypted.slice(0,50)+'...':'[密钥无效]';
     const result=await CryptoUtils.decrypt(m.encrypted,k);
-    if(!result){
-      return m.encrypted?m.encrypted.slice(0,50)+'...':'[解密失败]';
-    }
+    if(!result)return m.encrypted?m.encrypted.slice(0,50)+'...':'[解密失败]';
     return result;
   },
   markRead(ci){const v=this._data.conversations[ci];if(!v)return;let ch=false;if(v.unread>0){v.unread=0;ch=true}v.messages.forEach(m=>{if(!m.isRead){m.isRead=true;ch=true}});if(ch)this.save()},
@@ -483,13 +447,6 @@ const Store={
   getTotalUnread(){return Object.values(this._data.conversations).reduce((s,c)=>s+(c.unread||0),0)},
   async addDemoContacts(){}
 };
-// === Cross-tab: storage event for instant sync ===
-window.addEventListener('storage',function(e){
-  if(e.key&&Store._data.user&&e.key==='sc_'+Store._data.user.id){
-    // Our data was modified by another tab - sync immediately
-    Store._syncFromStorage();
-  }
-});
 
 // ==================== App Logic ====================
 let currentChatContact=null,createStep=0,createMnemonic='',createConfirmed=false,currentTab='chats',chatRefreshTimer=null,pageStack=[];
@@ -499,7 +456,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   Store.onChange(()=>{refreshCurrentView();updateBadges()});
   if(Store.isLoggedIn){
     showPage('page-main');switchTab('chats');
-    Store._startSync();
+    Store._subscribe();
   }
   const ri=document.getElementById('restore-input');
   if(ri)ri.addEventListener('input',()=>{const w=ri.value.trim().split(/\s+/).filter(Boolean);document.getElementById('restore-word-count').textContent=`${w.length} / 12 个词`;document.getElementById('restore-btn').disabled=w.length!==12});
