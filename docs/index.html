@@ -228,22 +228,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .pwa-push-banner .pwa-push-inner { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .pwa-push-banner .pwa-push-inner .action { color: var(--primary); font-weight: 500; margin-left: auto; }
 
-/* ==================== QR Code ==================== */
-.qr-container { display: flex; flex-direction: column; align-items: center; padding: 24px; }
-.qr-card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 280px; }
-.qr-card canvas { border-radius: 8px; }
-.qr-card .qr-name { font-size: 18px; font-weight: 600; margin-top: 16px; }
-.qr-card .qr-id { font-size: 12px; font-family: monospace; color: var(--text-secondary); margin-top: 4px; word-break: break-all; text-align: center; }
-.qr-scan-area { position: relative; width: 100%; max-width: 300px; aspect-ratio: 1; margin: 0 auto; border-radius: 16px; overflow: hidden; background: #000; }
-.qr-scan-area video { width: 100%; height: 100%; object-fit: cover; }
-.qr-scan-area .scan-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.qr-scan-area .scan-frame { width: 200px; height: 200px; border: 2px solid rgba(255,255,255,0.6); border-radius: 12px; position: relative; }
-.qr-scan-area .scan-frame::before { content: ''; position: absolute; left: -2px; right: -2px; top: 50%; height: 2px; background: var(--primary); animation: scanLine 2s ease-in-out infinite; }
-@keyframes scanLine { 0%,100% { top: 10%; } 50% { top: 90%; } }
-.qr-scan-hint { text-align: center; font-size: 14px; color: var(--text-secondary); margin-top: 16px; }
-.qr-actions { display: flex; gap: 12px; margin-top: 20px; width: 100%; max-width: 300px; }
-.qr-actions .btn { flex: 1; }
-
 </style>
 </head>
 <body>
@@ -332,8 +316,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <div class="step-icon">👤</div>
       <div class="step-title">添加好友</div>
       <div class="step-desc">发送好友请求，对方同意后即可开始聊天</div>
-      <button class="btn btn-primary btn-small" style="margin-bottom:20px;width:auto;padding:8px 24px" onclick="openQRScanner()">📷 扫描二维码添加</button>
-      <div style="width:100%;text-align:center;color:var(--text-secondary);font-size:13px;margin-bottom:16px">—— 或手动输入 ——</div>
       <div class="input-group"><label>用户ID</label><input id="add-contact-id" placeholder="输入对方的用户ID"></div>
       <div class="input-group"><label>备注名</label><input id="add-contact-name" placeholder="给对方取个名字"></div>
     </div>
@@ -344,25 +326,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   <div id="page-friend-requests" class="page panel">
     <div class="header"><button class="back-btn" onclick="closePage('page-friend-requests')">&larr;</button><h2>新的朋友</h2><div class="header-right"></div></div>
     <div id="friend-requests-body" style="flex:1;overflow-y:auto"></div>
-  </div>
-
-  <!-- My QR Code Page -->
-  <div id="page-my-qr" class="page panel">
-    <div class="header"><button class="back-btn" onclick="closePage('page-my-qr')">&larr;</button><h2>我的二维码</h2><div class="header-right"></div></div>
-    <div class="body qr-container" id="my-qr-body"></div>
-  </div>
-
-  <!-- QR Scanner Page -->
-  <div id="page-qr-scanner" class="page panel">
-    <div class="header"><button class="back-btn" onclick="closeQRScanner()">&larr;</button><h2>扫一扫</h2><div class="header-right"></div></div>
-    <div class="body" style="align-items:center;padding-top:32px">
-      <div class="qr-scan-area"><video id="qr-video" autoplay playsinline></video><div class="scan-overlay"><div class="scan-frame"></div></div></div>
-      <div class="qr-scan-hint">将二维码放入框内，自动识别</div>
-      <div id="qr-scan-status" style="margin-top:12px;font-size:13px;color:var(--primary)"></div>
-      <div class="qr-actions">
-        <button class="btn btn-secondary btn-small" onclick="closeQRScanner()">取消</button>
-      </div>
-    </div>
   </div>
 
   <!-- Mnemonic View Page -->
@@ -384,28 +347,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
-// ==================== QR Code Helper ====================
-function QRGen(text,cellSize){
-  cellSize=cellSize||6;
-  const margin=cellSize*3;
-  // Auto-detect type number
-  const qr=qrcode(0,'M');
-  qr.addData(text);
-  qr.make();
-  const mc=qr.getModuleCount();
-  const size=mc*cellSize+margin*2;
-  const canvas=document.createElement('canvas');
-  canvas.width=size;canvas.height=size;
-  const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size);
-  ctx.fillStyle='#000';
-  for(let r=0;r<mc;r++)for(let c=0;c<mc;c++)if(qr.isDark(r,c))ctx.fillRect(c*cellSize+margin,r*cellSize+margin,cellSize,cellSize);
-  return canvas;
-}
-
 // ==================== Crypto Module ====================
 const WORD_LIST=["abandon","ability","able","about","above","absent","absorb","abstract","absurd","abuse","access","accident","account","accuse","achieve","acid","acoustic","acquire","across","act","action","actor","actress","actual","adapt","add","addict","address","adjust","admit","adult","advance","advice","aerobic","affair","afford","afraid","again","age","agent","agree","ahead","aim","air","airport","aisle","alarm","album","alcohol","alert","alien","all","alley","allow","almost","alone","alpha","already","also","alter","always","amateur","amazing","among","amount","amused","analyst","anchor","ancient","anger","angle","angry","animal","ankle","announce","annual","another","answer","antenna","antique","anxiety","any","apart","apology","appear","apple","approve","april","arch","arctic","area","arena","argue","arm","armed","armor","army","around","arrange","arrest","arrive","arrow","art","artefact","artist","artwork","ask","aspect","assault","asset","assist","assume","asthma","athlete","atom","attack","attend","attitude","attract","auction","audit","august","aunt","author","auto","autumn","average","avocado","avoid","awake","aware","awesome","awful","awkward","axis","baby","bachelor","bacon","badge","bag","balance","balcony","ball","bamboo","banana","banner","bar","barely","bargain","barrel","base","basic","basket","battle","beach","bean","beauty","because","become","beef","before","begin","behave","behind","believe","below","belt","bench","benefit","best","betray","better","between","beyond","bicycle","bid","bike","bind","biology","bird","birth","bitter","black","blade","blame","blanket","blast","bleak","bless","blind","blood","blossom","blow","blue","blur","blush","board","boat","body","boil","bomb","bone","bonus","book","boost","border","boring","borrow","boss","bottom","bounce","box","boy","bracket","brain","brand","brass","brave","bread","breeze","brick","bridge","brief","bright","bring","brisk","broccoli","broken","bronze","broom","brother","brown","brush","bubble","buddy","budget","buffalo","build","bulb","bulk","bullet","bundle","bunny","burden","burger","burst","bus","business","busy","butter","buyer","buzz","cabbage","cabin","cable","cactus"];
 const CryptoUtils={
@@ -649,13 +591,13 @@ function updateBadges(){const t=Store.getTotalUnread();const b=document.getEleme
 
 function renderChatsTab(container){const contacts=Store.contacts.filter(x=>x.status==='accepted').slice().sort((a,b)=>{const la=Store.getLastMessage(a.id)?.timestamp||a.addedAt;const lb=Store.getLastMessage(b.id)?.timestamp||b.addedAt;return lb-la});let h=`<div class="header" style="position:relative"><div style="width:40px">${Store.user?`<div class="avatar avatar-sm" style="background:${Store.user.avatarColor};cursor:pointer" onclick="switchTab('profile')">${Store.user.displayName[0]}</div>`:''}</div><h2>消息</h2><div class="header-right"><button class="back-btn" style="font-size:22px;margin:0" onclick="showPage('page-add-contact')">➕</button></div></div><div class="search-bar"><div class="search-bar-inner">🔍 搜索</div></div>`;if(!contacts.length){h+=`<div class="empty-state"><div class="icon">💬</div><p>暂无会话</p><p style="font-size:13px">添加联系人开始聊天</p></div>`}else{h+=`<div class="conv-list">`;for(const c of contacts){const lm=Store.getLastMessage(c.id);const u=Store.conversations[c.id]?.unread||0;const t=lm?formatTime(lm.timestamp):'';h+=`<div class="conv-item" onclick="openChat('${c.id}')"><div class="avatar avatar-md" style="background:${c.avatarColor}">${c.displayName[0]}</div><div class="info"><div class="top"><span class="name">${esc(c.displayName)}</span><span class="time">${t}</span></div><div class="top" style="margin-top:1px"><span style="font-size:11px;color:var(--text-secondary);font-family:monospace">ID: ${c.id}</span></div><div class="bottom"><span class="preview"><span class="lock">🔒</span> <span id="conv-preview-${c.id}">${lm?'...':'[加密会话已建立]'}</span></span>${u>0?`<span class="unread-badge">${u}</span>`:''}</div></div></div>`}h+=`</div>`}container.innerHTML=h;for(const c of contacts){const lm=Store.getLastMessage(c.id);if(lm)Store.decryptMessage(c.id,lm).then(t=>{const el=document.getElementById(`conv-preview-${c.id}`);if(el)el.textContent=t.length>20?t.slice(0,20)+'...':t})}}
 
-function renderContactsTab(c){const frCount=Store.getPendingRequests().length;const accepted=Store.contacts.filter(x=>x.status==='accepted');const pendingOut=Store.contacts.filter(x=>x.status==='pending_out');let h=`<div class="header"><div style="width:40px"><button class="back-btn" style="font-size:18px;margin:0" onclick="openQRScanner()">📷</button></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div style="flex:1;overflow-y:auto">`;h+=`<div class="contact-item" onclick="openFriendRequests()"><div class="avatar avatar-md" style="background:var(--orange)">🤝</div><div class="cinfo"><div class="cname">新的朋友</div><div class="cstatus">${frCount>0?`<span style="color:var(--red);font-weight:600">${frCount}条待处理</span>`:'暂无新请求'}</div></div></div>`;if(pendingOut.length>0){h+=`<div class="section-title">等待验证 (${pendingOut.length})</div>`;for(const x of pendingOut){h+=`<div class="contact-item" style="opacity:0.7"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot off"></span>等待对方同意</div></div></div>`}}h+=`<div class="section-title">好友 (${accepted.length})</div>`;for(const x of accepted){const hm=!!x.myKeyB64;const ht=!!x.theirKeyB64;const st=(hm&&ht)?'双向加密已建立':hm?'已生成发送密钥·待导入对方密钥':ht?'已导入对方密钥·待生成发送密钥':'待建立加密';const dot=(hm&&ht)?'on':'off';h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot ${dot}"></span>${st}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
+function renderContactsTab(c){const frCount=Store.getPendingRequests().length;const accepted=Store.contacts.filter(x=>x.status==='accepted');const pendingOut=Store.contacts.filter(x=>x.status==='pending_out');let h=`<div class="header"><div style="width:40px"></div><h2>通讯录</h2><div class="header-right"><button class="back-btn" style="font-size:20px;margin:0" onclick="showPage('page-add-contact')">👤+</button></div></div><div style="flex:1;overflow-y:auto">`;h+=`<div class="contact-item" onclick="openFriendRequests()"><div class="avatar avatar-md" style="background:var(--orange)">🤝</div><div class="cinfo"><div class="cname">新的朋友</div><div class="cstatus">${frCount>0?`<span style="color:var(--red);font-weight:600">${frCount}条待处理</span>`:'暂无新请求'}</div></div></div>`;if(pendingOut.length>0){h+=`<div class="section-title">等待验证 (${pendingOut.length})</div>`;for(const x of pendingOut){h+=`<div class="contact-item" style="opacity:0.7"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot off"></span>等待对方同意</div></div></div>`}}h+=`<div class="section-title">好友 (${accepted.length})</div>`;for(const x of accepted){const hm=!!x.myKeyB64;const ht=!!x.theirKeyB64;const st=(hm&&ht)?'双向加密已建立':hm?'已生成发送密钥·待导入对方密钥':ht?'已导入对方密钥·待生成发送密钥':'待建立加密';const dot=(hm&&ht)?'on':'off';h+=`<div class="contact-item" onclick="openChat('${x.id}')"><div class="avatar avatar-md" style="background:${x.avatarColor}">${x.displayName[0]}</div><div class="cinfo"><div class="cname">${esc(x.displayName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${x.id}</div><div class="cstatus"><span class="dot ${dot}"></span>${st}</div></div></div>`}h+=`</div>`;c.innerHTML=h}
 
 function openFriendRequests(){renderFriendRequests();showPage('page-friend-requests')}
 function renderFriendRequests(){const body=document.getElementById('friend-requests-body');const reqs=Store.getPendingRequests();if(!reqs.length){body.innerHTML=`<div class="empty-state"><div class="icon">🤝</div><p>暂无好友请求</p></div>`;return}let h='';for(const r of reqs){const colors=['#E74C3C','#2ECC71','#F39C12','#9B59B6','#1ABC9C','#4A90D9'];const ac=colors[Math.abs(hashCode(r.fromId))%colors.length];const t=formatTime(r.timestamp);h+=`<div class="contact-item" style="padding:12px 16px"><div class="avatar avatar-md" style="background:${ac}">${r.fromName[0]}</div><div class="cinfo" style="flex:1"><div class="cname">${esc(r.fromName)}</div><div style="font-size:11px;color:var(--text-secondary);font-family:monospace;margin-top:1px">ID: ${r.fromId}</div><div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${t}</div></div><div style="display:flex;gap:8px"><button class="btn btn-primary btn-small" style="padding:4px 12px;font-size:13px" onclick="doAcceptFriend('${r.fromId}','${esc(r.fromName)}')">同意</button><button class="btn btn-secondary btn-small" style="padding:4px 12px;font-size:13px" onclick="doRejectFriend('${r.fromId}')">拒绝</button></div></div>`}body.innerHTML=h}
 async function doAcceptFriend(id,name){await Store.acceptFriendRequest(id,name);renderFriendRequests();updateBadges()}
 function doRejectFriend(id){Store.rejectFriendRequest(id);renderFriendRequests();updateBadges()}
-function renderProfileTab(c){const u=Store.user;if(!u)return;const pushEnabled=localStorage.getItem('push_enabled')==='1';const notifPerm=typeof Notification!=='undefined'?Notification.permission:'default';const pushStatusText=pushEnabled?'已开启':(notifPerm==='denied'?'已被浏览器禁止':'未开启');const pushStatusColor=pushEnabled?'#2ECC71':(notifPerm==='denied'?'var(--red)':'var(--orange)');c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">社交</div><div class="settings-item" onclick="showMyQR()"><span class="si-icon">📱</span><span class="si-label">我的二维码</span><span class="si-arrow">›</span></div><div class="settings-item" onclick="openQRScanner()"><span class="si-icon">📷</span><span class="si-label">扫一扫</span><span class="si-arrow">›</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">通知</div><div class="settings-item" onclick="togglePushNotification()"><span class="si-icon">🔔</span><span class="si-label">消息推送通知</span><span class="si-value" style="color:${pushStatusColor}">${pushStatusText}</span><span class="si-arrow">›</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
+function renderProfileTab(c){const u=Store.user;if(!u)return;const pushEnabled=localStorage.getItem('push_enabled')==='1';const notifPerm=typeof Notification!=='undefined'?Notification.permission:'default';const pushStatusText=pushEnabled?'已开启':(notifPerm==='denied'?'已被浏览器禁止':'未开启');const pushStatusColor=pushEnabled?'#2ECC71':(notifPerm==='denied'?'var(--red)':'var(--orange)');c.innerHTML=`<div class="header"><div style="width:40px"></div><h2>个人信息</h2><div class="header-right"></div></div><div style="flex:1;overflow-y:auto"><div class="profile-header"><div class="avatar avatar-lg avatar-round" style="background:${u.avatarColor}">${u.displayName[0]}</div><div class="name">${esc(u.displayName)}</div><div class="uid">ID: ${u.id} <button class="copy-btn" style="font-size:12px;padding:2px 8px" onclick="copyText('${u.id}',this)">复制</button></div></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">通知</div><div class="settings-item" onclick="togglePushNotification()"><span class="si-icon">🔔</span><span class="si-label">消息推送通知</span><span class="si-value" style="color:${pushStatusColor}">${pushStatusText}</span><span class="si-arrow">›</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">安全</div><div class="settings-item" onclick="viewMnemonic()"><span class="si-icon">🔑</span><span class="si-label">查看助记词</span><span class="si-arrow">›</span></div><div class="settings-item"><span class="si-icon">🔒</span><span class="si-label">加密算法</span><span class="si-value">AES-256-GCM</span></div><div style="height:8px;background:var(--bg)"></div><div class="section-title">数据</div><div class="settings-item"><span class="si-icon">👥</span><span class="si-label">联系人</span><span class="si-value">${Store.contacts.length}</span></div><div class="settings-item"><span class="si-icon">💬</span><span class="si-label">会话</span><span class="si-value">${Object.keys(Store.conversations).length}</span></div><div style="height:8px;background:var(--bg)"></div><div style="padding:24px"><button class="btn btn-danger" onclick="doLogout()">退出登录</button></div></div>`}
 function viewMnemonic(){const m=Store.mnemonic;if(!m)return;const w=m.split(' ');document.getElementById('mnemonic-view-body').innerHTML=`<div class="step-icon">👁️‍🗨️</div><div class="step-title">您的助记词</div><div class="step-desc">请勿在公共场合展示</div><div class="mnemonic-grid">${w.map((x,i)=>`<div class="mnemonic-word"><span class="num">${i+1}</span><span class="word">${x}</span></div>`).join('')}</div><button class="copy-btn" onclick="copyText('${m}',this)">📋 复制助记词</button>`;showPage('page-mnemonic-view')}
 function doLogout(){if(confirm('退出后需要助记词才能恢复账户。确认退出？')){Store.logout();pageStack=[];document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-welcome').classList.add('active')}}
 
@@ -714,113 +656,7 @@ function refreshCurrentView(){if(currentChatContact)renderMessages();const c=doc
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function formatTime(ts){const d=new Date(ts);const n=new Date();if(d.toDateString()===n.toDateString())return d.toTimeString().slice(0,5);const y=new Date(n);y.setDate(y.getDate()-1);if(d.toDateString()===y.toDateString())return'昨天';return`${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`}
 function formatTimeShort(ts){return new Date(ts).toTimeString().slice(0,5)}
-function copyText(t,b){navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='✅ 已复制';setTimeout(()=>b.textContent=o,2000)}})};
-
-// ==================== QR Code Functions ====================
-let qrScanStream=null;
-let qrScanTimer=null;
-
-function showMyQR(){
-  const u=Store.user;if(!u)return;
-  const body=document.getElementById('my-qr-body');
-  const qrData='securechat:'+u.id+':'+u.displayName;
-  const canvas=QRGen(qrData,6);
-  body.innerHTML='';
-  const card=document.createElement('div');card.className='qr-card';
-  const avatarDiv=document.createElement('div');
-  avatarDiv.className='avatar avatar-lg avatar-round';
-  avatarDiv.style.cssText='background:'+u.avatarColor+';margin-bottom:12px';
-  avatarDiv.textContent=u.displayName[0];
-  card.appendChild(avatarDiv);
-  card.appendChild(canvas);
-  const nameEl=document.createElement('div');nameEl.className='qr-name';nameEl.textContent=u.displayName;
-  const idEl=document.createElement('div');idEl.className='qr-id';idEl.textContent='ID: '+u.id;
-  card.appendChild(nameEl);card.appendChild(idEl);
-  const hint=document.createElement('div');hint.style.cssText='margin-top:16px;font-size:13px;color:var(--text-secondary);text-align:center';
-  hint.textContent='让对方扫描此二维码添加您为好友';
-  body.appendChild(card);body.appendChild(hint);
-  const saveBtn=document.createElement('button');saveBtn.className='btn btn-primary btn-small';saveBtn.style.cssText='margin-top:16px;width:auto;padding:8px 24px';
-  saveBtn.textContent='💾 保存二维码图片';
-  saveBtn.onclick=function(){
-    const a=document.createElement('a');a.download='securechat-qr-'+u.id+'.png';a.href=canvas.toDataURL('image/png');a.click();
-  };
-  body.appendChild(saveBtn);
-  showPage('page-my-qr');
-}
-
-function openQRScanner(){
-  showPage('page-qr-scanner');
-  startQRScanner();
-}
-
-async function startQRScanner(){
-  const video=document.getElementById('qr-video');
-  const statusEl=document.getElementById('qr-scan-status');
-  statusEl.textContent='正在启动摄像头...';
-  try{
-    qrScanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    video.srcObject=qrScanStream;
-    await video.play();
-    statusEl.textContent='';
-    // Start scanning frames
-    const canvas=document.createElement('canvas');
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    qrScanTimer=setInterval(()=>{
-      if(video.readyState!==video.HAVE_ENOUGH_DATA)return;
-      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-      ctx.drawImage(video,0,0,canvas.width,canvas.height);
-      const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
-      if(typeof jsQR==='function'){
-        const code=jsQR(imageData.data,imageData.width,imageData.height,{inversionAttempts:'dontInvert'});
-        if(code&&code.data){
-          handleQRResult(code.data);
-        }
-      }
-    },200);
-  }catch(err){
-    console.error('[QR] Camera error',err);
-    statusEl.textContent='无法访问摄像头: '+err.message;
-  }
-}
-
-function stopQRScanner(){
-  if(qrScanTimer){clearInterval(qrScanTimer);qrScanTimer=null}
-  if(qrScanStream){qrScanStream.getTracks().forEach(t=>t.stop());qrScanStream=null}
-  const video=document.getElementById('qr-video');
-  if(video)video.srcObject=null;
-}
-
-function closeQRScanner(){stopQRScanner();closePage('page-qr-scanner')}
-
-function handleQRResult(data){
-  stopQRScanner();
-  // Format: securechat:USERID:DISPLAYNAME
-  if(data.startsWith('securechat:')){
-    const parts=data.split(':');
-    if(parts.length>=2){
-      const userId=parts[1];
-      const displayName=parts[2]||'User_'+userId.slice(0,6);
-      closePage('page-qr-scanner');
-      // Check if already a contact
-      if(Store.getContact(userId)){
-        alert('该联系人已存在');return;
-      }
-      if(userId===Store.user?.id){
-        alert('不能添加自己为好友');return;
-      }
-      // Pre-fill add contact page or directly send request
-      if(confirm('确认添加好友？\n\n昵称: '+displayName+'\nID: '+userId)){
-        Store.sendFriendRequest(userId,displayName).then(()=>{
-          alert('好友请求已发送，等待对方确认');
-        });
-      }
-      return;
-    }
-  }
-  // Not a valid SecureChat QR
-  closePage('page-qr-scanner');
-  alert('无效的二维码，请扫描 SecureChat 用户的二维码');
-}}
+function copyText(t,b){navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='✅ 已复制';setTimeout(()=>b.textContent=o,2000)}})}
 
 // ==================== PWA: Service Worker + Install + Web Push ====================
 let deferredInstallPrompt=null;

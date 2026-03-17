@@ -1,4 +1,4 @@
-const CACHE_NAME = 'securechat-v2';
+const CACHE_NAME = 'securechat-v1';
 const ASSETS = [
   './',
   './index.html',
