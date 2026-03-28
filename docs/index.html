@@ -288,7 +288,34 @@
         .product-card.games::after { background: var(--primary); }
         .product-card.series::after { background: var(--accent); }
 
-        a.product-card { text-decoration: none; color: inherit; display: block; }
+        a.product-card { text-decoration: none; color: inherit; display: block; cursor: pointer; }
+
+        .product-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding: 0.6rem 1.4rem;
+            background: var(--primary);
+            color: white;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .product-btn .arrow {
+            transition: transform 0.2s;
+        }
+
+        a.product-card:hover .product-btn {
+            background: var(--primary-light);
+            box-shadow: 0 4px 16px rgba(108, 58, 237, 0.4);
+        }
+
+        a.product-card:hover .product-btn .arrow {
+            transform: translateX(4px);
+        }
 
         .product-emoji {
             font-size: 2.5rem;
@@ -491,6 +518,7 @@
                     <li>Social features & leaderboards</li>
                     <li>Regular new title releases</li>
                 </ul>
+                <span class="product-btn">Visit AhaGame <span class="arrow">&rarr;</span></span>
             </a>
             <a href="https://ahashorts.com" target="_blank" rel="noopener" class="product-card series fade-in">
                 <span class="product-emoji">🎬</span>
@@ -502,6 +530,7 @@
                     <li>Diverse genres & storylines</li>
                     <li>Fresh episodes released weekly</li>
                 </ul>
+                <span class="product-btn">Visit AhaShorts <span class="arrow">&rarr;</span></span>
             </a>
         </div>
     </div>
