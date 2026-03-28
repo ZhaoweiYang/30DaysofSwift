@@ -288,6 +288,8 @@
         .product-card.games::after { background: var(--primary); }
         .product-card.series::after { background: var(--accent); }
 
+        a.product-card { text-decoration: none; color: inherit; display: block; }
+
         .product-emoji {
             font-size: 2.5rem;
             margin-bottom: 1.2rem;
@@ -479,9 +481,9 @@
             <p>Two core verticals, one shared vision — entertainment that delights.</p>
         </div>
         <div class="products-grid">
-            <div class="product-card games fade-in">
+            <a href="https://aha-game.com" target="_blank" rel="noopener" class="product-card games fade-in">
                 <span class="product-emoji">🎮</span>
-                <h3>Mini Games</h3>
+                <h3>AhaGame</h3>
                 <p>Quick to play, hard to put down. Our mini games deliver rich gameplay in compact, addictive formats designed for mobile-first audiences.</p>
                 <ul class="product-features">
                     <li>Casual & hyper-casual game experiences</li>
@@ -489,10 +491,10 @@
                     <li>Social features & leaderboards</li>
                     <li>Regular new title releases</li>
                 </ul>
-            </div>
-            <div class="product-card series fade-in">
+            </a>
+            <a href="https://ahashorts.com" target="_blank" rel="noopener" class="product-card series fade-in">
                 <span class="product-emoji">🎬</span>
-                <h3>Short Drama Series</h3>
+                <h3>AhaShorts</h3>
                 <p>Binge-worthy stories told in minutes. Our short dramas deliver compelling narratives, rich characters, and cinematic quality in episodic micro-format.</p>
                 <ul class="product-features">
                     <li>Original scripted short series</li>
@@ -500,7 +502,7 @@
                     <li>Diverse genres & storylines</li>
                     <li>Fresh episodes released weekly</li>
                 </ul>
-            </div>
+            </a>
         </div>
     </div>
 </section>
